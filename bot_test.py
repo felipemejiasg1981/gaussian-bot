@@ -205,8 +205,9 @@ def webhook_receiver():
     data = request.get_json(force=True, silent=True)
 
     if not data:
-        log("⚠️  Webhook vacío recibido")
-        return jsonify({"status": "error", "message": "No JSON"}), 400
+        raw_msg = request.data.decode('utf-8', errors='ignore')[:100]
+        log(f"⚠️ Webhook IGNORADO (no es JSON): {raw_msg}...")
+        return jsonify({"status": "ignored", "message": "Payload is not JSON"}), 200
 
     action   = data.get('action', '').lower()
     symbol   = par_limpio(data.get('symbol', ''))
