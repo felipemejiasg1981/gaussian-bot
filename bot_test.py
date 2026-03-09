@@ -202,7 +202,7 @@ def index():
 
 @app.route('/webhook', methods=['POST'])
 def webhook_receiver():
-    data = request.json
+    data = request.get_json(force=True, silent=True)
 
     if not data:
         log("⚠️  Webhook vacío recibido")
