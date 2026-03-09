@@ -20,7 +20,7 @@ API_SECRET = os.environ.get("BINANCE_API_SECRET", "uOxQhv9babmSZO80MG4dfIVB2iiUX
 DRY_RUN = False
 
 # 🪙 Pares permitidos (solo estos se operan)
-PARES_PERMITIDOS = ["RIVERUSDT", "PIPPINUSDT"]
+PARES_PERMITIDOS = ["BTCUSDT", "RIVERUSDT", "PIPPINUSDT"]
 
 # 💰 Capital por trade (en USDT)
 MONTO_POR_TRADE = 5.0
