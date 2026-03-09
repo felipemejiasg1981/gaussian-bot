@@ -23,7 +23,7 @@ DRY_RUN = False
 PARES_PERMITIDOS = ["BTCUSDT", "RIVERUSDT", "PIPPINUSDT"]
 
 # 💰 Capital por trade (en USDT)
-MONTO_POR_TRADE = 5.0
+MONTO_POR_TRADE = 10.0
 
 # ⚡ Apalancamiento
 LEVERAGE = 5
