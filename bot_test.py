@@ -19,8 +19,8 @@ API_SECRET = os.environ.get("BINANCE_API_SECRET", "uOxQhv9babmSZO80MG4dfIVB2iiUX
 # False = Opera en Binance REAL con dinero real
 DRY_RUN = False
 
-# 🪙 Pares permitidos (solo estos se operan)
-PARES_PERMITIDOS = ["BTCUSDT", "RIVERUSDT", "PIPPINUSDT"]
+# 🪙 No hay whitelist (se aceptan las 200 principales que envíes desde TV)
+PARES_PERMITIDOS = [] # Vacío significa "todos los USDT permitidos"
 
 # 💰 Capital por trade (en USDT)
 MONTO_POR_TRADE = 10.0
@@ -28,8 +28,9 @@ MONTO_POR_TRADE = 10.0
 # ⚡ Apalancamiento
 LEVERAGE = 5
 
-# 🔒 Máximo 1 trade abierto por cripto
+# 🔒 Límites de trades
 MAX_TRADES_POR_PAR = 1
+MAX_TOTAL_TRADES   = 3  # Máximo 3 criptos en operación a la vez
 
 # ════════════════════════════════════════════════════════════════
 # CONEXIÓN A BINANCE (solo si DRY_RUN = False)
@@ -220,21 +221,32 @@ def webhook_receiver():
     log(f"🚨 WEBHOOK: {action.upper()} | {symbol} | Trade #{trade_id}")
     print(f"{'='*50}")
 
-    # ─── FILTRO: Par permitido ───
-    if symbol not in PARES_PERMITIDOS:
-        log(f"❌ RECHAZADO — {symbol} no está en la lista {PARES_PERMITIDOS}")
-        return jsonify({"status": "rejected", "reason": f"Par {symbol} no permitido"}), 200
+    # ─── FILTRO: Par permitido (solo USDT) ───
+    if not symbol.endswith("USDT"):
+        log(f"❌ RECHAZADO — {symbol} no es un par USDT válido")
+        return jsonify({"status": "rejected", "reason": "Solo pares USDT"}), 200
 
     # ═══════════════════════════════════════════════════
     # OPEN — Abrir nuevo trade
     # ═══════════════════════════════════════════════════
     if action == 'open':
+        # 1. Límite de trades totales (Max 3)
+        if len(trades_abiertos) >= MAX_TOTAL_TRADES:
+            log(f"❌ RECHAZADO — Límite de {MAX_TOTAL_TRADES} trades alcanzado.")
+            return jsonify({"status": "rejected", "reason": "Max total trades reached"}), 200
+
+        # 2. Límite por par (Max 1)
         if symbol in trades_abiertos:
             log(f"❌ RECHAZADO — Ya hay trade en {symbol} (#{trades_abiertos[symbol]['trade_id']})")
             return jsonify({"status": "rejected", "reason": "Max 1 trade por par"}), 200
 
         sl   = data.get('sl', 'N/A')
-        conf = data.get('conf', 'N/A')
+        conf = int(data.get('conf', 0))
+
+        # 3. Filtro de Confianza (5 estrellas = 100 puntos)
+        if conf < 100:
+            log(f"❌ RECHAZADO — Confianza insuficiente: {conf}/100 (Esperaba 100 para 5 estrellas)")
+            return jsonify({"status": "rejected", "reason": "Low confidence (need 5 stars)"}), 200
 
         log(f"📤 ABRIENDO {side.upper()} {symbol} @ {price}")
         log(f"   💵 ${MONTO_POR_TRADE} x{LEVERAGE} = ${MONTO_POR_TRADE * LEVERAGE} exposición")
