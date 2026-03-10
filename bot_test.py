@@ -425,6 +425,11 @@ def balance():
         return jsonify({"error": str(e)}), 500
 
 
+if not DRY_RUN:
+    log("🚀 Iniciando bot en modo PRODUCCIÓN (Bitget)")
+    # Intento de conexión inicial para validar llaves en el log
+    get_exchange()
+
 if __name__ == '__main__':
     modo = "🧪 DRY RUN (simulación)" if DRY_RUN else "🔴 PRODUCCIÓN REAL"
 
@@ -442,23 +447,7 @@ if __name__ == '__main__':
     print("║   📊 Estado    : http://127.0.0.1:5001/status   ║")
     print("╚══════════════════════════════════════════════════╝")
 
-    if DRY_RUN:
-        print(f"\n✅ Modo DRY RUN activo — todas las órdenes se simulan localmente")
-        print(f"   Para operar con dinero real, cambia DRY_RUN = True en bot_test.py")
-    if not DRY_RUN:
-        ex = get_exchange()
-        if ex:
-            try:
-                bal = ex.fetch_balance()
-                usdt_total = bal.get('USDT', {}).get('total', 0)
-                print(f"\n✅ Conectado a Bitget")
-                print(f"💰 Balance USDT: {usdt_total}")
-            except Exception as e:
-                print(f"\n⚠️ Error obteniendo balance inicial: {e}")
-        else:
-            print("\n⚠️  Advertencia: Bot iniciado sin conexión a Bitget (DRY RUN o llaves faltantes)")
-
-    print()
+    print(f"📡 Webhook en espera: http://0.0.0.0:{port}/webhook")
     port = int(os.environ.get("PORT", 5001))
     app.run(host="0.0.0.0", port=port, debug=(not os.environ.get("RAILWAY_ENVIRONMENT")))
 
