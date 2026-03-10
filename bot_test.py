@@ -36,19 +36,36 @@ MAX_TRADES_POR_PAR = 1
 MAX_TOTAL_TRADES   = 5  # Máximo 5 criptos en operación a la vez
 
 # ════════════════════════════════════════════════════════════════
-# CONEXIÓN A BITGET
+# CONEXIÓN A BITGET (Lógica Segura para Railway)
 # ════════════════════════════════════════════════════════════════
 exchange = None
-if not DRY_RUN:
-    exchange = ccxt.bitget({
-        'apiKey': BITGET_KEY,
-        'secret': BITGET_SECRET,
-        'password': BITGET_PASS,
-        'options': {
-            'defaultType': 'swap',  # Futuros Perpétuos en Bitget
-        },
-        'enableRateLimit': True,
-    })
+
+def get_exchange():
+    global exchange
+    if exchange:
+        return exchange
+    
+    if DRY_RUN:
+        return None
+        
+    # Verificación de llaves antes de conectar
+    if not BITGET_KEY or not BITGET_SECRET or not BITGET_PASS:
+        log("⚠️ Advertencia: BITGET API Keys incompletas. (Normal durante el Build de Railway)")
+        return None
+
+    try:
+        exchange = ccxt.bitget({
+            'apiKey': BITGET_KEY,
+            'secret': BITGET_SECRET,
+            'password': BITGET_PASS,
+            'options': {'defaultType': 'swap'},
+            'enableRateLimit': True,
+        })
+        log("✅ Conexión con Bitget establecida correctamente")
+        return exchange
+    except Exception as e:
+        log(f"❌ Error crítico de conexión a Bitget: {e}")
+        return None
 
 # ════════════════════════════════════════════════════════════════
 # Estado interno
@@ -86,8 +103,10 @@ def set_leverage(symbol_ccxt):
         log(f"   ⚡ [DRY RUN] Leverage {LEVERAGE}x para {symbol_ccxt}")
         return
     try:
-        exchange.set_leverage(LEVERAGE, symbol_ccxt)
-        log(f"   ⚡ Leverage {LEVERAGE}x configurado para {symbol_ccxt}")
+        ex = get_exchange()
+        if ex:
+            ex.set_leverage(LEVERAGE, symbol_ccxt)
+            log(f"   ⚡ Leverage {LEVERAGE}x configurado para {symbol_ccxt}")
     except Exception as e:
         log(f"   ⚠️  Error configurando leverage: {e}")
 
@@ -98,7 +117,9 @@ def calcular_cantidad(symbol_ccxt, precio):
         precio_f = float(precio)
         cantidad = (MONTO_POR_TRADE * LEVERAGE) / precio_f
         if not DRY_RUN:
-            cantidad = float(exchange.amount_to_precision(symbol_ccxt, cantidad))
+            ex = get_exchange()
+            if ex:
+                cantidad = float(ex.amount_to_precision(symbol_ccxt, cantidad))
         return round(cantidad, 6)
     except Exception as e:
         log(f"   ⚠️  Error calculando cantidad: {e}")
@@ -121,7 +142,12 @@ def abrir_orden(symbol_ccxt, side, precio):
         return {'id': fake_id, 'status': 'simulated'}
 
     try:
-        order = exchange.create_market_order(
+        ex = get_exchange()
+        if not ex:
+            log("   ❌ Abortando orden: Exchange no disponible")
+            return None
+            
+        order = ex.create_market_order(
             symbol=symbol_ccxt,
             side=side,
             amount=cantidad,
@@ -149,16 +175,21 @@ def cerrar_parcial(symbol_ccxt, side_original, porcentaje, precio):
         return {'id': f"DRY-P-{datetime.now().strftime('%H%M%S')}", 'status': 'simulated'}
 
     try:
+        ex = get_exchange()
         if not DRY_RUN:
-            cantidad_cerrar = float(exchange.amount_to_precision(symbol_ccxt, cantidad_cerrar))
-        order = exchange.create_market_order(
-            symbol=symbol_ccxt,
-            side=close_side,
-            amount=cantidad_cerrar,
-            params={'reduceOnly': True}
-        )
-        log(f"   ✅ PARCIAL CERRADO: {close_side.upper()} {cantidad_cerrar} {symbol_ccxt} ({porcentaje}%)")
-        return order
+            if ex:
+                cantidad_cerrar = float(ex.amount_to_precision(symbol_ccxt, cantidad_cerrar))
+                order = ex.create_market_order(
+                    symbol=symbol_ccxt,
+                    side=close_side,
+                    amount=cantidad_cerrar,
+                    params={'reduceOnly': True}
+                )
+                log(f"   ✅ PARCIAL CERRADO: {close_side.upper()} {cantidad_cerrar} {symbol_ccxt} ({porcentaje}%)")
+                return order
+            else:
+                log("   ❌ Abortando parcial: Exchange no disponible")
+                return None
     except Exception as e:
         log(f"   ❌ ERROR cerrando parcial: {e}")
         return None
@@ -173,11 +204,16 @@ def cerrar_todo(symbol_ccxt, side_original):
         return {'id': f"DRY-C-{datetime.now().strftime('%H%M%S')}", 'status': 'simulated'}
 
     try:
-        positions = exchange.fetch_positions([symbol_ccxt])
+        ex = get_exchange()
+        if not ex:
+            log("   ❌ Abortando cierre: Exchange no disponible")
+            return None
+            
+        positions = ex.fetch_positions([symbol_ccxt])
         for pos in positions:
             amt = abs(float(pos.get('contracts', 0)))
             if amt > 0:
-                order = exchange.create_market_order(
+                order = ex.create_market_order(
                     symbol=symbol_ccxt,
                     side=close_side,
                     amount=amt,
@@ -375,7 +411,9 @@ def balance():
     if DRY_RUN:
         return jsonify({"modo": "DRY RUN", "total": "simulado", "libre": "simulado"})
     try:
-        bal = exchange.fetch_balance()
+        ex = get_exchange()
+        if not ex: return jsonify({"error": "Exchange no disponible"}), 500
+        bal = ex.fetch_balance()
         usdt = bal.get('USDT', {})
         return jsonify({
             "total": usdt.get('total', 0),
@@ -406,15 +444,18 @@ if __name__ == '__main__':
     if DRY_RUN:
         print(f"\n✅ Modo DRY RUN activo — todas las órdenes se simulan localmente")
         print(f"   Para operar con dinero real, cambia DRY_RUN = True en bot_test.py")
-    else:
-        try:
-            bal = exchange.fetch_balance()
-            usdt_total = bal.get('USDT', {}).get('total', 0)
-            print(f"\n✅ Conectado a Bitget")
-            print(f"💰 Balance USDT: {usdt_total}")
-        except Exception as e:
-            print(f"\n❌ Error conectando a Bitget: {e}")
-            print("   Verifica tus API Keys y Passphrase en Railway")
+    if not DRY_RUN:
+        ex = get_exchange()
+        if ex:
+            try:
+                bal = ex.fetch_balance()
+                usdt_total = bal.get('USDT', {}).get('total', 0)
+                print(f"\n✅ Conectado a Bitget")
+                print(f"💰 Balance USDT: {usdt_total}")
+            except Exception as e:
+                print(f"\n⚠️ Error obteniendo balance inicial: {e}")
+        else:
+            print("\n⚠️  Advertencia: Bot iniciado sin conexión a Bitget (DRY RUN o llaves faltantes)")
 
     print()
     port = int(os.environ.get("PORT", 5001))
