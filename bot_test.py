@@ -59,9 +59,13 @@ def get_exchange():
             'apiKey': key,
             'secret': secret,
             'password': password,
-            'options': {'defaultType': 'swap'},
+            'options': {
+                'defaultType': 'swap',
+                'createMarketBuyOrderRequiresPrice': False
+            },
             'enableRateLimit': True,
         })
+        exchange.load_markets()
         log("✅ Conexión con Bitget establecida correctamente")
         return exchange
     except Exception as e:
@@ -106,7 +110,8 @@ def set_leverage(symbol_ccxt):
     try:
         ex = get_exchange()
         if ex:
-            ex.set_leverage(LEVERAGE, symbol_ccxt)
+            # Bitget requiere marginCoin para set_leverage
+            ex.set_leverage(LEVERAGE, symbol_ccxt, params={'marginCoin': 'USDT'})
             log(f"   ⚡ Leverage {LEVERAGE}x configurado para {symbol_ccxt}")
     except Exception as e:
         log(f"   ⚠️  Error configurando leverage: {e}")
@@ -148,10 +153,12 @@ def abrir_orden(symbol_ccxt, side, precio):
             log("   ❌ Abortando orden: Exchange no disponible")
             return None
             
-        order = ex.create_market_order(
+        order = ex.create_order(
             symbol=symbol_ccxt,
+            type='market',
             side=side,
             amount=cantidad,
+            price=float(precio)
         )
         log(f"   ✅ ORDEN EJECUTADA: {side.upper()} {cantidad} {symbol_ccxt}")
         log(f"   📋 Order ID: {order['id']}")
@@ -180,10 +187,12 @@ def cerrar_parcial(symbol_ccxt, side_original, porcentaje, precio):
         if not DRY_RUN:
             if ex:
                 cantidad_cerrar = float(ex.amount_to_precision(symbol_ccxt, cantidad_cerrar))
-                order = ex.create_market_order(
+                order = ex.create_order(
                     symbol=symbol_ccxt,
+                    type='market',
                     side=close_side,
                     amount=cantidad_cerrar,
+                    price=float(precio),
                     params={'reduceOnly': True}
                 )
                 log(f"   ✅ PARCIAL CERRADO: {close_side.upper()} {cantidad_cerrar} {symbol_ccxt} ({porcentaje}%)")
@@ -214,10 +223,14 @@ def cerrar_todo(symbol_ccxt, side_original):
         for pos in positions:
             amt = abs(float(pos.get('contracts', 0)))
             if amt > 0:
-                order = ex.create_market_order(
+                ticker = ex.fetch_ticker(symbol_ccxt)
+                curr_price = float(ticker['last'])
+                order = ex.create_order(
                     symbol=symbol_ccxt,
+                    type='market',
                     side=close_side,
                     amount=amt,
+                    price=curr_price,
                     params={'reduceOnly': True}
                 )
                 log(f"   ✅ POSICIÓN CERRADA: {symbol_ccxt} | {amt} contratos")
@@ -447,7 +460,7 @@ if __name__ == '__main__':
     print("║   📊 Estado    : http://127.0.0.1:5001/status   ║")
     print("╚══════════════════════════════════════════════════╝")
 
-    print(f"📡 Webhook en espera: http://0.0.0.0:{port}/webhook")
     port = int(os.environ.get("PORT", 5001))
+    print(f"📡 Webhook en espera: http://0.0.0.0:{port}/webhook")
     app.run(host="0.0.0.0", port=port, debug=(not os.environ.get("RAILWAY_ENVIRONMENT")))
 
