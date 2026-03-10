@@ -47,11 +47,11 @@ def get_exchange():
     # Obtener llaves solo cuando se necesiten (Runtime, no Build)
     key    = os.environ.get("BITGET_API_KEY", "")
     secret = os.environ.get("BITGET_API_SECRET", "")
-    password = os.environ.get("BITGET_PASSWORD", "")
+    password = os.environ.get("BG_PASS", "")
 
     # Verificación de llaves antes de conectar
     if not key or not secret or not password:
-        log("⚠️ Advertencia: BITGET API Keys incompletas o no encontradas.")
+        log("⚠️ Advertencia: API Keys/Passphrase (BG_PASS) no encontradas.")
         return None
 
     try:
