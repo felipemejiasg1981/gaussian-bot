@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from datetime import datetime
 import ccxt
 import os
+import time
 
 app = Flask(__name__)
 
@@ -235,6 +236,20 @@ def sync_trade_from_exchange(symbol, symbol_ccxt, trade_id='N/A', fallback_price
     except Exception as e:
         log(f"   ⚠️ No se pudo reconstruir {symbol} desde Bitget: {e}")
         return None
+
+
+def wait_for_position_confirmation(symbol_ccxt, retries=3, delay=0.8):
+    """Confirma que la orden realmente terminó en una posición abierta."""
+    if DRY_RUN:
+        return {'status': 'simulated'}
+
+    for attempt in range(retries):
+        position = fetch_open_position(symbol_ccxt)
+        if position:
+            return position
+        if attempt < retries - 1:
+            time.sleep(delay)
+    return None
 
 
 def set_leverage(symbol_ccxt):
@@ -473,7 +488,9 @@ def webhook():
         # ── EJECUTAR EN BINANCE ──
         order = abrir_orden(sym_ccxt, side, price)
 
-        if order and (order.get('id') or order.get('status') == 'simulated'):
+        position_confirmation = wait_for_position_confirmation(sym_ccxt)
+
+        if order and position_confirmation and (order.get('id') or order.get('status') == 'simulated' or not DRY_RUN):
             trades_abiertos[symbol] = {
                 "trade_id": trade_id,
                 "side": side,
@@ -485,8 +502,8 @@ def webhook():
             }
             save_trades() # Persistir cambio
         else:
-            log(f"❌ ABORTADO — La orden no se pudo ejecutar en el exchange")
-            return jsonify({"status": "error", "reason": "Exchange order failed"}), 200
+            log(f"❌ ABORTADO — Bitget no confirmó posición abierta para {symbol}")
+            return jsonify({"status": "error", "reason": "Exchange position not confirmed"}), 200
 
     # ═══════════════════════════════════════════════════
     # PARTIAL_CLOSE — Cierre parcial (TP hit)
