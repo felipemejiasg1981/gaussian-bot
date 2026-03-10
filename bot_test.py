@@ -65,22 +65,57 @@ def get_exchange():
             'enableRateLimit': True,
         })
         exchange.load_markets()
+        
+        # Forzar modo Unilateral (One-way) para evitar Error 40774
+        try:
+            # En CCXT Bitget: False = Unilateral, True = Hedged
+            exchange.set_position_mode(False, params={'productType': 'USDT-FUTURES'})
+            log("   🔄 Modo de posición asegurado: UNILATERAL")
+        except Exception as e:
+            log(f"   ℹ️  Nota sobre modo de posición: {e}")
+            
         log("✅ Conexión con Bitget establecida correctamente")
         return exchange
     except Exception as e:
         log(f"❌ Error crítico de conexión a Bitget: {e}")
         return None
 
-# ════════════════════════════════════════════════════════════════
-# Estado interno
-# ════════════════════════════════════════════════════════════════
-trades_abiertos = {}
-historial = []
-
-
 def log(msg):
     ts = datetime.now().strftime("%H:%M:%S")
     print(f"[{ts}] {msg}")
+
+
+# ════════════════════════════════════════════════════════════════
+# Estado interno y Persistencia
+# ════════════════════════════════════════════════════════════════
+import json
+TRADES_FILE = "trades.json"
+trades_abiertos = {}
+historial = []
+
+def save_trades():
+    """Guarda los trades activos en un archivo JSON"""
+    try:
+        with open(TRADES_FILE, 'w') as f:
+            json.dump(trades_abiertos, f, indent=4)
+    except Exception as e:
+        log(f"⚠️ Error guardando trades: {e}")
+
+def load_trades():
+    """Carga los trades activos desde el archivo JSON"""
+    global trades_abiertos
+    if os.path.exists(TRADES_FILE):
+        try:
+            with open(TRADES_FILE, 'r') as f:
+                data = json.load(f)
+                trades_abiertos.clear()
+                trades_abiertos.update(data)
+            log(f"📂 {len(trades_abiertos)} trades cargados desde {TRADES_FILE}")
+        except Exception as e:
+            log(f"⚠️ Error cargando trades: {e}")
+
+# Cargar trades al iniciar el módulo
+load_trades()
 
 
 def par_limpio(symbol):
@@ -101,6 +136,107 @@ def par_ccxt(symbol):
     return f"{base}/USDT:USDT"
 
 
+def product_type_for_market(market):
+    """Mapea el settle coin al productType que Bitget espera."""
+    settle = (market.get('settleId') or market.get('settle') or 'USDT').upper()
+    mapping = {
+        'USDT': 'USDT-FUTURES',
+        'USDC': 'USDC-FUTURES',
+        'SUSDT': 'SUSDT-FUTURES',
+        'SUSDC': 'SUSDC-FUTURES',
+    }
+    return mapping.get(settle, market.get('info', {}).get('productType', 'USDT-FUTURES'))
+
+
+def get_swap_market(symbol_ccxt):
+    """Valida que el símbolo exista en Bitget Futures USDT-M."""
+    ex = get_exchange()
+    if not ex:
+        raise RuntimeError("Exchange no disponible")
+
+    market = ex.market(symbol_ccxt)
+    if not market.get('swap'):
+        raise ValueError(f"{symbol_ccxt} no es un mercado swap en Bitget")
+
+    settle = (market.get('settleId') or market.get('settle') or '').upper()
+    if settle != 'USDT':
+        raise ValueError(f"{symbol_ccxt} no liquida en USDT (settle={settle or 'N/A'})")
+
+    return market
+
+
+def build_bitget_params(symbol_ccxt, reduce_only=False):
+    """Genera params consistentes para Bitget futures en modo one-way."""
+    market = get_swap_market(symbol_ccxt)
+    params = {
+        'marginCoin': market.get('settleId') or 'USDT',
+        'productType': product_type_for_market(market),
+        'marginMode': 'cross',
+        'oneWayMode': True,
+    }
+    if reduce_only:
+        params['reduceOnly'] = True
+    return params
+
+
+def infer_trade_side_from_position(position):
+    """Convierte el side normalizado de CCXT a buy/sell del bot."""
+    side = (position.get('side') or '').lower()
+    if side in ('long', 'buy'):
+        return 'buy'
+    if side in ('short', 'sell'):
+        return 'sell'
+    return None
+
+
+def fetch_open_position(symbol_ccxt):
+    """Devuelve la posición abierta real en Bitget para el símbolo."""
+    ex = get_exchange()
+    if not ex:
+        return None
+
+    market = get_swap_market(symbol_ccxt)
+    params = {
+        'productType': product_type_for_market(market),
+        'marginCoin': market.get('settleId') or 'USDT',
+    }
+    positions = ex.fetch_positions([symbol_ccxt], params=params)
+    for pos in positions:
+        contracts = abs(float(pos.get('contracts') or 0))
+        if pos.get('symbol') == symbol_ccxt and contracts > 0:
+            return pos
+    return None
+
+
+def sync_trade_from_exchange(symbol, symbol_ccxt, trade_id='N/A', fallback_price='N/A'):
+    """Reconstruye el estado local desde la posición real del exchange."""
+    try:
+        position = fetch_open_position(symbol_ccxt)
+        if not position:
+            return None
+
+        side = infer_trade_side_from_position(position)
+        if not side:
+            return None
+
+        entry_price = position.get('entryPrice') or fallback_price
+        trades_abiertos[symbol] = {
+            "trade_id": trade_id,
+            "side": side,
+            "entry": entry_price,
+            "sl": trades_abiertos.get(symbol, {}).get('sl', 'N/A'),
+            "posicion_pct": trades_abiertos.get(symbol, {}).get('posicion_pct', 100),
+            "order_id": trades_abiertos.get(symbol, {}).get('order_id'),
+            "synced_from_exchange": True,
+        }
+        save_trades()
+        log(f"   🔄 Estado reconstruido desde Bitget para {symbol}: {side.upper()} | entry={entry_price}")
+        return trades_abiertos[symbol]
+    except Exception as e:
+        log(f"   ⚠️ No se pudo reconstruir {symbol} desde Bitget: {e}")
+        return None
+
+
 def set_leverage(symbol_ccxt):
     """Configura el apalancamiento para el par"""
     if DRY_RUN:
@@ -109,8 +245,12 @@ def set_leverage(symbol_ccxt):
     try:
         ex = get_exchange()
         if ex:
-            # Bitget requiere marginCoin para set_leverage
-            ex.set_leverage(LEVERAGE, symbol_ccxt, params={'marginCoin': 'USDT'})
+            market = get_swap_market(symbol_ccxt)
+            params = {
+                'marginCoin': market.get('settleId') or 'USDT',
+                'productType': product_type_for_market(market),
+            }
+            ex.set_leverage(LEVERAGE, symbol_ccxt, params=params)
             log(f"   ⚡ Leverage {LEVERAGE}x configurado para {symbol_ccxt}")
     except Exception as e:
         log(f"   ⚠️  Error configurando leverage: {e}")
@@ -125,9 +265,10 @@ def calcular_cantidad(symbol_ccxt, precio):
             ex = get_exchange()
             if ex:
                 cantidad = float(ex.amount_to_precision(symbol_ccxt, cantidad))
+        log(f"   📊 Cantidad calculada: {cantidad} para {symbol_ccxt} @ {precio}")
         return round(cantidad, 6)
     except Exception as e:
-        log(f"   ⚠️  Error calculando cantidad: {e}")
+        log(f"   ⚠️ Error calculando cantidad para {symbol_ccxt}: {e}")
         return 0
 
 
@@ -149,53 +290,69 @@ def abrir_orden(symbol_ccxt, side, precio):
     try:
         ex = get_exchange()
         if not ex:
-            log("   ❌ Abortando orden: Exchange no disponible")
+            log("   ❌ Abortando orden: Exchange no disponible (API Keys?)")
             return None
-            
-        order = ex.create_market_order(
+
+        get_swap_market(symbol_ccxt)
+        params = build_bitget_params(symbol_ccxt)
+        log(f"   📡 Enviando orden market a Bitget: {side} {cantidad} {symbol_ccxt}")
+        order = ex.create_order(
             symbol=symbol_ccxt,
+            type='market',
             side=side,
             amount=cantidad,
-            params={'price': float(precio)}
+            price=float(precio),
+            params=params,
         )
         log(f"   ✅ ORDEN EJECUTADA: {side.upper()} {cantidad} {symbol_ccxt}")
         log(f"   📋 Order ID: {order['id']}")
         return order
     except Exception as e:
-        log(f"   ❌ ERROR abriendo orden: {e}")
+        log(f"   ❌ ERROR CRÍTICO al abrir orden en Bitget: {e}")
         return None
 
 
 def cerrar_parcial(symbol_ccxt, side_original, porcentaje, precio):
     """Cierra un % de la posición (side inverso)"""
-    close_side = 'sell' if side_original == 'buy' else 'buy'
-    cantidad_total = calcular_cantidad(symbol_ccxt, precio)
-    cantidad_cerrar = round(cantidad_total * (porcentaje / 100.0), 6)
-
-    if cantidad_cerrar <= 0:
-        log(f"   ⚠️  Cantidad a cerrar muy pequeña: {cantidad_cerrar}")
-        return None
-
     if DRY_RUN:
+        cantidad_total = calcular_cantidad(symbol_ccxt, precio)
+        cantidad_cerrar = round(cantidad_total * (porcentaje / 100.0), 6)
+        close_side = 'sell' if side_original == 'buy' else 'buy'
         log(f"   ✅ [DRY RUN] PARCIAL: {close_side.upper()} {cantidad_cerrar} {symbol_ccxt} ({porcentaje}%)")
         return {'id': f"DRY-P-{datetime.now().strftime('%H%M%S')}", 'status': 'simulated'}
 
     try:
         ex = get_exchange()
-        if not DRY_RUN:
-            if ex:
-                cantidad_cerrar = float(ex.amount_to_precision(symbol_ccxt, cantidad_cerrar))
-                order = ex.create_market_order(
-                    symbol=symbol_ccxt,
-                    side=close_side,
-                    amount=cantidad_cerrar,
-                    params={'price': float(precio), 'reduceOnly': True}
-                )
-                log(f"   ✅ PARCIAL CERRADO: {close_side.upper()} {cantidad_cerrar} {symbol_ccxt} ({porcentaje}%)")
-                return order
-            else:
-                log("   ❌ Abortando parcial: Exchange no disponible")
-                return None
+        if not ex:
+            log("   ❌ Abortando parcial: Exchange no disponible")
+            return None
+
+        position = fetch_open_position(symbol_ccxt)
+        if not position:
+            log(f"   ⚠️  No hay posición real abierta en Bitget para {symbol_ccxt}")
+            return None
+
+        side_real = infer_trade_side_from_position(position)
+        close_side = 'sell' if side_real == 'buy' else 'buy'
+        cantidad_total = abs(float(position.get('contracts') or 0))
+        cantidad_cerrar = cantidad_total * (porcentaje / 100.0)
+        cantidad_cerrar = float(ex.amount_to_precision(symbol_ccxt, cantidad_cerrar))
+
+        if cantidad_cerrar <= 0:
+            log(f"   ⚠️  Cantidad a cerrar muy pequeña: {cantidad_cerrar}")
+            return None
+
+        params = build_bitget_params(symbol_ccxt, reduce_only=True)
+        order = ex.create_order(
+            symbol=symbol_ccxt,
+            type='market',
+            side=close_side,
+            amount=cantidad_cerrar,
+            price=float(precio),
+            params=params,
+        )
+        log(f"   ✅ PARCIAL CERRADO: {close_side.upper()} {cantidad_cerrar} {symbol_ccxt} ({porcentaje}%)")
+        return order
     except Exception as e:
         log(f"   ❌ ERROR cerrando parcial: {e}")
         return None
@@ -214,21 +371,25 @@ def cerrar_todo(symbol_ccxt, side_original):
         if not ex:
             log("   ❌ Abortando cierre: Exchange no disponible")
             return None
-            
-        positions = ex.fetch_positions([symbol_ccxt])
-        for pos in positions:
-            amt = abs(float(pos.get('contracts', 0)))
-            if amt > 0:
-                ticker = ex.fetch_ticker(symbol_ccxt)
-                curr_price = float(ticker['last'])
-                order = ex.create_market_order(
-                    symbol=symbol_ccxt,
-                    side=close_side,
-                    amount=amt,
-                    params={'price': curr_price, 'reduceOnly': True}
-                )
-                log(f"   ✅ POSICIÓN CERRADA: {symbol_ccxt} | {amt} contratos")
-                return order
+
+        position = fetch_open_position(symbol_ccxt)
+        if position:
+            side_real = infer_trade_side_from_position(position)
+            close_side = 'sell' if side_real == 'buy' else 'buy'
+            amt = abs(float(position.get('contracts') or 0))
+            ticker = ex.fetch_ticker(symbol_ccxt)
+            curr_price = float(ticker['last'])
+            params = build_bitget_params(symbol_ccxt, reduce_only=True)
+            order = ex.create_order(
+                symbol=symbol_ccxt,
+                type='market',
+                side=close_side,
+                amount=amt,
+                price=curr_price,
+                params=params,
+            )
+            log(f"   ✅ POSICIÓN CERRADA: {symbol_ccxt} | {amt} contratos")
+            return order
         log(f"   ⚠️  No se encontró posición abierta en {symbol_ccxt}")
         return None
     except Exception as e:
@@ -262,13 +423,13 @@ def webhook():
     print(f"\n{'='*50}")
     log(f"🚨 WEBHOOK RECIBIDO")
     print(f"   Payload: {data}")
-    print(f"{'='*50}")
-
+    
     if not data:
         raw_msg = request.data.decode('utf-8', errors='ignore')[:100]
         log(f"⚠️ Webhook IGNORADO (no es JSON): {raw_msg}...")
+        print(f"{'='*50}")
         return jsonify({"status": "ignored", "message": "Payload is not JSON"}), 200
-
+    
     action   = data.get('action', '').lower()
     symbol   = par_limpio(data.get('symbol', ''))
     trade_id = data.get('trade_id', 'N/A')
@@ -277,6 +438,7 @@ def webhook():
     sym_ccxt = par_ccxt(symbol)
 
     log(f"📋 PROCESANDO: {action.upper()} | {symbol} (Orig: {data.get('symbol')}) | Trade #{trade_id}")
+    print(f"{'='*50}")
 
     # ─── FILTRO: Par permitido (solo USDT) ───
     if not symbol.endswith("USDT"):
@@ -287,9 +449,9 @@ def webhook():
     # OPEN — Abrir nuevo trade
     # ═══════════════════════════════════════════════════
     if action == 'open':
-        # 1. Límite de trades totales (Max 3)
+        # 1. Límite de trades totales (Max 5)
         if len(trades_abiertos) >= MAX_TOTAL_TRADES:
-            log(f"❌ RECHAZADO — Límite de {MAX_TOTAL_TRADES} trades alcanzado.")
+            log(f"❌ RECHAZADO — Límite de {MAX_TOTAL_TRADES} trades simultáneos alcanzado. (Activos: {len(trades_abiertos)})")
             return jsonify({"status": "rejected", "reason": "Max total trades reached"}), 200
 
         # 2. Límite por par (Max 1)
@@ -302,7 +464,7 @@ def webhook():
 
         # 3. Filtro de Confianza (5 estrellas = 100 puntos)
         if conf < 100:
-            log(f"❌ RECHAZADO — Confianza insuficiente: {conf}/100 (Esperaba 100 para 5 estrellas)")
+            log(f"❌ RECHAZADO — Confianza insuficiente: {conf}/100. Necesitas 5 estrellas (100 puntos) para abrir.")
             return jsonify({"status": "rejected", "reason": "Low confidence (need 5 stars)"}), 200
 
         log(f"📤 ABRIENDO {side.upper()} {symbol} @ {price}")
@@ -311,14 +473,20 @@ def webhook():
         # ── EJECUTAR EN BINANCE ──
         order = abrir_orden(sym_ccxt, side, price)
 
-        trades_abiertos[symbol] = {
-            "trade_id": trade_id,
-            "side": side,
-            "entry": price,
-            "sl": sl,
-            "posicion_pct": 100,
-            "order_id": order['id'] if order else None,
-        }
+        if order and (order.get('id') or order.get('status') == 'simulated'):
+            trades_abiertos[symbol] = {
+                "trade_id": trade_id,
+                "side": side,
+                "entry": price,
+                "sl": sl,
+                "posicion_pct": 100,
+                "order_id": order['id'] if order else None,
+                "symbol_ccxt": sym_ccxt,
+            }
+            save_trades() # Persistir cambio
+        else:
+            log(f"❌ ABORTADO — La orden no se pudo ejecutar en el exchange")
+            return jsonify({"status": "error", "reason": "Exchange order failed"}), 200
 
     # ═══════════════════════════════════════════════════
     # PARTIAL_CLOSE — Cierre parcial (TP hit)
@@ -329,17 +497,23 @@ def webhook():
         new_sl    = data.get('new_sl', 'N/A')
 
         if symbol not in trades_abiertos:
-            log(f"⚠️  partial_close para {symbol} pero no hay trade abierto")
-            return jsonify({"status": "error", "reason": "No trade abierto"}), 200
+            synced_trade = sync_trade_from_exchange(symbol, sym_ccxt, trade_id=trade_id, fallback_price=price)
+            if not synced_trade:
+                log(f"⚠️  partial_close para {symbol} pero no hay trade abierto ni posición en Bitget")
+                return jsonify({"status": "error", "reason": "No trade abierto"}), 200
 
         side_orig = trades_abiertos[symbol]['side']
         log(f"🎯 {reason} HIT — Cerrando {close_pct}% de {symbol}")
 
         # ── EJECUTAR PARCIAL EN BINANCE ──
-        cerrar_parcial(sym_ccxt, side_orig, close_pct, price)
+        partial_order = cerrar_parcial(sym_ccxt, side_orig, close_pct, price)
+        if not partial_order:
+            log(f"❌ ABORTADO — El parcial no se pudo ejecutar en Bitget")
+            return jsonify({"status": "error", "reason": "Partial close failed"}), 200
 
         trades_abiertos[symbol]['sl'] = new_sl
-        trades_abiertos[symbol]['posicion_pct'] -= close_pct
+        trades_abiertos[symbol]['posicion_pct'] = max(0, trades_abiertos[symbol]['posicion_pct'] - close_pct)
+        save_trades() # Persistir cambio
 
         log(f"   🛑 SL movido a: {new_sl}")
         log(f"   📊 Posición restante: {trades_abiertos[symbol]['posicion_pct']}%")
@@ -352,9 +526,17 @@ def webhook():
         if symbol in trades_abiertos:
             old_sl = trades_abiertos[symbol].get('sl', '?')
             trades_abiertos[symbol]['sl'] = new_sl
+            save_trades() # Persistir cambio
             log(f"🔄 SL: {old_sl} → {new_sl} ({symbol})")
         else:
-            log(f"⚠️  update_sl para {symbol} pero no hay trade abierto")
+            synced_trade = sync_trade_from_exchange(symbol, sym_ccxt, trade_id=trade_id, fallback_price=price)
+            if synced_trade:
+                old_sl = synced_trade.get('sl', '?')
+                trades_abiertos[symbol]['sl'] = new_sl
+                save_trades()
+                log(f"🔄 SL: {old_sl} → {new_sl} ({symbol}, reconstruido desde exchange)")
+            else:
+                log(f"⚠️  update_sl para {symbol} pero no hay trade abierto")
 
     # ═══════════════════════════════════════════════════
     # ADD — Entry 2 / Re-entry
@@ -375,6 +557,9 @@ def webhook():
 
         log(f"🔴 CERRANDO {symbol} — {reason} | PnL: {pnl}")
 
+        if symbol not in trades_abiertos:
+            sync_trade_from_exchange(symbol, sym_ccxt, trade_id=trade_id, fallback_price=price)
+
         if symbol in trades_abiertos:
             side_orig = trades_abiertos[symbol]['side']
 
@@ -382,6 +567,7 @@ def webhook():
             cerrar_todo(sym_ccxt, side_orig)
 
             trade_info = trades_abiertos.pop(symbol)
+            save_trades() # Persistir cambio
             historial.append({**trade_info, "pnl": pnl, "closed_at": datetime.now().isoformat()})
             log(f"   🟢 {symbol} libre para nuevos trades")
         else:
@@ -432,6 +618,17 @@ def balance():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/clear_trades')
+def clear_trades():
+    """Limpia todos los trades activos (solo para debug)"""
+    global trades_abiertos
+    count = len(trades_abiertos)
+    trades_abiertos.clear()
+    save_trades()
+    log(f"🗑️ Trades limpiados manualmente via endpoint ({count} eliminados)")
+    return jsonify({"status": "success", "message": f"{count} trades eliminados", "current": trades_abiertos})
+
+
 if not DRY_RUN:
     log("🚀 Iniciando bot en modo PRODUCCIÓN (Bitget)")
     # Intento de conexión inicial para validar llaves en el log
@@ -457,4 +654,3 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5001))
     print(f"📡 Webhook en espera: http://0.0.0.0:{port}/webhook")
     app.run(host="0.0.0.0", port=port, debug=(not os.environ.get("RAILWAY_ENVIRONMENT")))
-
