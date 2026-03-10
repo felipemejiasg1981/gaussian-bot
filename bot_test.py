@@ -9,39 +9,43 @@ app = Flask(__name__)
 # ║  CONFIGURACIÓN DEL BOT — Gaussian Trend v5 Pro Bot         ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-# 🔑 API KEYS — Se leen de variables de entorno (seguro para la nube)
-# En Railway: se configuran en el dashboard → Variables
-# En local: se usan los valores de abajo como fallback
-API_KEY    = os.environ.get("BINANCE_API_KEY", "PCNKVFyJacgU0FLulSw6LcHpU1KSbtLaSJBRg5ihLLbsi7tfWcLsDiVyMWTtjMN4")
-API_SECRET = os.environ.get("BINANCE_API_SECRET", "uOxQhv9babmSZO80MG4dfIVB2iiUXLE02e1aBjTK8cf8AjmSTcoCkZWC4j4GKBrJ")
+# 🔑 API BITGET (Key, Secret, Passphrase)
+BITGET_KEY    = os.environ.get("BITGET_API_KEY", "")
+BITGET_SECRET = os.environ.get("BITGET_API_SECRET", "")
+BITGET_PASS   = os.environ.get("BITGET_PASSWORD", "")
 # 🧪 MODO DE OPERACIÓN
 # True  = Simula localmente (no toca el exchange, ideal para probar)
 # False = Opera en Binance REAL con dinero real
 DRY_RUN = False
 
-# 🪙 No hay whitelist (se aceptan las 200 principales que envíes desde TV)
-PARES_PERMITIDOS = [] # Vacío significa "todos los USDT permitidos"
+# 🪙 Whitelist — Pares donde el bot puede operar
+PARES_PERMITIDOS = [
+    "ARCUSDT", "AXSUSDT", "FLOCKUSDT", "JELLYUSDT", "RIVERUSDT", "DEEPUSDT", "BEATUSDT", "BERAUSDT", 
+    "LINEAUSDT", "MUBARAKUSDT", "NOMUSDT", "ORDIUSDT", "PIPPINUSDT", "ROSEUSDT", "SOLUSDT", "SQDUSDT", "UNIUSDT",
+    "NEIROUSDT", "ASTERUSDT", "AWEUSDT", "1000BONKUSDT", "BIOUSDT", "BREVUSDT", "CAKEUSDT", "COTIUSDT", "CYBERUSDT"
+]
 
 # 💰 Capital por trade (en USDT)
-MONTO_POR_TRADE = 10.0
+MONTO_POR_TRADE = 5.0
 
 # ⚡ Apalancamiento
 LEVERAGE = 5
 
 # 🔒 Límites de trades
 MAX_TRADES_POR_PAR = 1
-MAX_TOTAL_TRADES   = 3  # Máximo 3 criptos en operación a la vez
+MAX_TOTAL_TRADES   = 5  # Máximo 5 criptos en operación a la vez
 
 # ════════════════════════════════════════════════════════════════
-# CONEXIÓN A BINANCE (solo si DRY_RUN = False)
+# CONEXIÓN A BITGET
 # ════════════════════════════════════════════════════════════════
 exchange = None
 if not DRY_RUN:
-    exchange = ccxt.binance({
-        'apiKey': API_KEY,
-        'secret': API_SECRET,
+    exchange = ccxt.bitget({
+        'apiKey': BITGET_KEY,
+        'secret': BITGET_SECRET,
+        'password': BITGET_PASS,
         'options': {
-            'defaultType': 'future',
+            'defaultType': 'swap',  # Futuros Perpétuos en Bitget
         },
         'enableRateLimit': True,
     })
@@ -59,9 +63,13 @@ def log(msg):
 
 
 def par_limpio(symbol):
-    """Normaliza el símbolo: RIVER/USDT → RIVERUSDT"""
-    s = symbol.upper().replace("/", "").replace("-", "").replace(".P", "")
-    if not s.endswith("USDT"):
+    """Normaliza el símbolo: BINANCE:RIVERUSDT.P → RIVERUSDT"""
+    if not symbol: return ""
+    s = symbol.upper()
+    if ":" in s:
+        s = s.split(":")[-1]
+    s = s.replace("/", "").replace("-", "").replace(".P", "").replace("PERP", "")
+    if not s.endswith("USDT") and s != "":
         s += "USDT"
     return s
 
@@ -201,9 +209,16 @@ def index():
     )
 
 
-@app.route('/webhook', methods=['POST'])
-def webhook_receiver():
+@app.route('/webhook', methods=['GET', 'POST'])
+def webhook():
+    if request.method == 'GET':
+        return "🤖 Bot de Gaussian Trend activo. Esperando señales POST desde TradingView."
+    
     data = request.get_json(force=True, silent=True)
+    print(f"\n{'='*50}")
+    log(f"🚨 WEBHOOK RECIBIDO")
+    print(f"   Payload: {data}")
+    print(f"{'='*50}")
 
     if not data:
         raw_msg = request.data.decode('utf-8', errors='ignore')[:100]
@@ -217,9 +232,7 @@ def webhook_receiver():
     price    = data.get('price', 'N/A')
     sym_ccxt = par_ccxt(symbol)
 
-    print(f"\n{'='*50}")
-    log(f"🚨 WEBHOOK: {action.upper()} | {symbol} | Trade #{trade_id}")
-    print(f"{'='*50}")
+    log(f"📋 PROCESANDO: {action.upper()} | {symbol} (Orig: {data.get('symbol')}) | Trade #{trade_id}")
 
     # ─── FILTRO: Par permitido (solo USDT) ───
     if not symbol.endswith("USDT"):
@@ -345,7 +358,7 @@ def webhook_receiver():
 @app.route('/status')
 def status():
     return jsonify({
-        "modo": "TESTNET" if exchange.sandbox else "REAL",
+        "modo": "SIMULADO" if DRY_RUN else "REAL",
         "activos": trades_abiertos,
         "historial": historial[-10:],
         "config": {
@@ -378,7 +391,7 @@ if __name__ == '__main__':
 
     print()
     print("╔══════════════════════════════════════════════════╗")
-    print(f"║   🤖 Gaussian Trend v5 Pro Bot                   ║")
+    print(f"║   🤖 Gaussian Trend IA Pro v6 EXTREME Bot       ║")
     print(f"║   {modo:<46} ║")
     print("╠══════════════════════════════════════════════════╣")
     print(f"║   💰 Monto    : ${MONTO_POR_TRADE} por trade              ║")
@@ -386,24 +399,24 @@ if __name__ == '__main__':
     print(f"║   🪙 Pares    : {', '.join(PARES_PERMITIDOS):<22}     ║")
     print(f"║   🔒 Máx/par  : {MAX_TRADES_POR_PAR} trade                        ║")
     print("╠══════════════════════════════════════════════════╣")
-    print("║   📡 Webhook   : http://127.0.0.1:5000/webhook  ║")
-    print("║   📊 Estado    : http://127.0.0.1:5000/status   ║")
+    print("║   📡 Webhook   : http://127.0.0.1:5001/webhook  ║")
+    print("║   📊 Estado    : http://127.0.0.1:5001/status   ║")
     print("╚══════════════════════════════════════════════════╝")
 
     if DRY_RUN:
         print(f"\n✅ Modo DRY RUN activo — todas las órdenes se simulan localmente")
-        print(f"   Para operar con dinero real, cambia DRY_RUN = False en bot_test.py")
+        print(f"   Para operar con dinero real, cambia DRY_RUN = True en bot_test.py")
     else:
         try:
             bal = exchange.fetch_balance()
             usdt_total = bal.get('USDT', {}).get('total', 0)
-            print(f"\n✅ Conectado a Binance")
+            print(f"\n✅ Conectado a Bitget")
             print(f"💰 Balance USDT: {usdt_total}")
         except Exception as e:
-            print(f"\n❌ Error conectando a Binance: {e}")
-            print("   Verifica tus API Keys en las líneas 14-15 del archivo")
+            print(f"\n❌ Error conectando a Bitget: {e}")
+            print("   Verifica tus API Keys y Passphrase en Railway")
 
     print()
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 5001))
     app.run(host="0.0.0.0", port=port, debug=(not os.environ.get("RAILWAY_ENVIRONMENT")))
 
