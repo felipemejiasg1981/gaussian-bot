@@ -60,8 +60,7 @@ def get_exchange():
             'secret': secret,
             'password': password,
             'options': {
-                'defaultType': 'swap',
-                'createMarketBuyOrderRequiresPrice': False
+                'defaultType': 'swap'
             },
             'enableRateLimit': True,
         })
@@ -97,9 +96,9 @@ def par_limpio(symbol):
 
 
 def par_ccxt(symbol):
-    """Convierte RIVERUSDT → RIVER/USDT (formato ccxt)"""
+    """Convierte RIVERUSDT → RIVER/USDT:USDT (formato ccxt swap)"""
     base = symbol.replace("USDT", "")
-    return f"{base}/USDT"
+    return f"{base}/USDT:USDT"
 
 
 def set_leverage(symbol_ccxt):
@@ -153,12 +152,11 @@ def abrir_orden(symbol_ccxt, side, precio):
             log("   ❌ Abortando orden: Exchange no disponible")
             return None
             
-        order = ex.create_order(
+        order = ex.create_market_order(
             symbol=symbol_ccxt,
-            type='market',
             side=side,
             amount=cantidad,
-            price=float(precio)
+            params={'price': float(precio)}
         )
         log(f"   ✅ ORDEN EJECUTADA: {side.upper()} {cantidad} {symbol_ccxt}")
         log(f"   📋 Order ID: {order['id']}")
@@ -187,13 +185,11 @@ def cerrar_parcial(symbol_ccxt, side_original, porcentaje, precio):
         if not DRY_RUN:
             if ex:
                 cantidad_cerrar = float(ex.amount_to_precision(symbol_ccxt, cantidad_cerrar))
-                order = ex.create_order(
+                order = ex.create_market_order(
                     symbol=symbol_ccxt,
-                    type='market',
                     side=close_side,
                     amount=cantidad_cerrar,
-                    price=float(precio),
-                    params={'reduceOnly': True}
+                    params={'price': float(precio), 'reduceOnly': True}
                 )
                 log(f"   ✅ PARCIAL CERRADO: {close_side.upper()} {cantidad_cerrar} {symbol_ccxt} ({porcentaje}%)")
                 return order
@@ -225,13 +221,11 @@ def cerrar_todo(symbol_ccxt, side_original):
             if amt > 0:
                 ticker = ex.fetch_ticker(symbol_ccxt)
                 curr_price = float(ticker['last'])
-                order = ex.create_order(
+                order = ex.create_market_order(
                     symbol=symbol_ccxt,
-                    type='market',
                     side=close_side,
                     amount=amt,
-                    price=curr_price,
-                    params={'reduceOnly': True}
+                    params={'price': curr_price, 'reduceOnly': True}
                 )
                 log(f"   ✅ POSICIÓN CERRADA: {symbol_ccxt} | {amt} contratos")
                 return order
