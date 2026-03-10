@@ -9,13 +9,9 @@ app = Flask(__name__)
 # ║  CONFIGURACIÓN DEL BOT — Gaussian Trend v5 Pro Bot         ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-# 🔑 API BITGET (Key, Secret, Passphrase)
-BITGET_KEY    = os.environ.get("BITGET_API_KEY", "")
-BITGET_SECRET = os.environ.get("BITGET_API_SECRET", "")
-BITGET_PASS   = os.environ.get("BITGET_PASSWORD", "")
 # 🧪 MODO DE OPERACIÓN
 # True  = Simula localmente (no toca el exchange, ideal para probar)
-# False = Opera en Binance REAL con dinero real
+# False = Opera en Bitget REAL con dinero real
 DRY_RUN = False
 
 # 🪙 Whitelist — Pares donde el bot puede operar
@@ -48,16 +44,21 @@ def get_exchange():
     if DRY_RUN:
         return None
         
+    # Obtener llaves solo cuando se necesiten (Runtime, no Build)
+    key    = os.environ.get("BITGET_API_KEY", "")
+    secret = os.environ.get("BITGET_API_SECRET", "")
+    password = os.environ.get("BITGET_PASSWORD", "")
+
     # Verificación de llaves antes de conectar
-    if not BITGET_KEY or not BITGET_SECRET or not BITGET_PASS:
-        log("⚠️ Advertencia: BITGET API Keys incompletas. (Normal durante el Build de Railway)")
+    if not key or not secret or not password:
+        log("⚠️ Advertencia: BITGET API Keys incompletas o no encontradas.")
         return None
 
     try:
         exchange = ccxt.bitget({
-            'apiKey': BITGET_KEY,
-            'secret': BITGET_SECRET,
-            'password': BITGET_PASS,
+            'apiKey': key,
+            'secret': secret,
+            'password': password,
             'options': {'defaultType': 'swap'},
             'enableRateLimit': True,
         })
