@@ -18,7 +18,11 @@ En este archivo registraremos todas las modificaciones realizadas a la estrategi
 - **Posible Causa**: Degradación de código durante la sincronización de versiones y cambios restrictivos en el compilador @version=6 de TradingView.
 - **Solución/Estado**: Resuelto. Se realizó una limpieza total de variables duplicadas, se corrigió el tipado a string y se separaron todas las declaraciones. Estrategia e Indicador sincronizados al 100%.
 
-### 2026-03-13 (Cierre Sincronización v6.2 Premium)
-- **Componente**: TradingView (Estrategia e Indicador)
-- **Cambio**: Unificación total de tablero Premium v3.1 y lógica de alertas `alert()`.
-- **Razón**: Asegurar que tanto el Backtesting (Estrategia) como el Manual (Indicador) tengan el mismo diseño institucional y que las alertas enviadas al bot sean bit-perfect. Se corrigieron >18 errores de sintaxis Pine v6.
+### 2026-03-13 (Mejoras de Fiabilidad y Compatibilidad)
+- **Componente**: Bot Python (`bot_v62.py`)
+- **Cambio**: 
+    1. Implementada limpieza de prefijos `BITGET:` y `BINANCE:` en símbolos.
+    2. Añadido soporte para variable de entorno `BG_PASS`.
+    3. Implementado endpoint `/logs` para monitoreo remoto.
+    4. Añadido reintento de órdenes (3 intentos) y pausa de seguridad en flips.
+- **Razón**: Resolver fallos de ejecución detectados en Railway y mejorar la robustez ante errores del exchange o latencia.
