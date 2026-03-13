@@ -265,7 +265,9 @@ def webhook():
     tid    = data.get('trade_id', 'N/A')
     pct    = data.get('close_pct', 0)
 
-    log(f"🚨 WEBHOOK: {action.upper()} | {symbol} | Trade #{tid}")
+    log(f"🚨 WEBHOOK RECIBIDO: {action.upper()} | {symbol} | Trade #{tid}")
+    # Guardar evento de recepción inmediata para depuración
+    record_event(symbol, action, "received", "Webhook reached bot", trade_id=tid)
 
     if action == 'open':
         if len(trades_abiertos) >= MAX_TOTAL_TRADES:
@@ -309,7 +311,7 @@ def status():
         eventos_recientes = eventos_recientes[-20:]
         
     return jsonify({
-        "bot": "Gaussian v6.2 Isolated",
+        "bot": "Gaussian v6.2 Premium (Sync)",
         "mode": "DRY_RUN" if DRY_RUN else "REAL",
         "active_trades": trades_abiertos,
         "recent_events": eventos_recientes
