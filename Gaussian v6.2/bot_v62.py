@@ -23,7 +23,7 @@ ERROR_LOG = BASE_DIR / "historial_de_fallos.md"
 DRY_RUN = os.environ.get("DRY_RUN", "False").lower() == "true"
 
 # 💰 Capital por trade (en USDT)
-MONTO_POR_TRADE = 10.0
+MONTO_POR_TRADE = 8.0
 LEVERAGE = 10
 
 # 🔒 Límites de trades
@@ -159,10 +159,25 @@ def abrir_posicion(symbol, side, price, sl):
     ex = get_exchange()
     if not ex: return None
 
+    # Normalizar símbolo para Bitget
+    sym_ccxt = par_ccxt(symbol)
+
+    # 1. EVITAR DUPLICADOS: Si ya está registrado local o si el exchange dice que hay posición
+    if symbol in trades_abiertos or any(s in symbol for s in trades_abiertos):
+        log(f"⚠️ Ya existe una posición abierta para {symbol}. Ignorando duplicado.")
+        return None
+
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            # Calcular cantidad
+            # 2. Sincronizar Apalancamiento (Causa probable de margenes altos si está en 1x/3x en Bitget)
+            try:
+                ex.set_leverage(LEVERAGE, sym_ccxt)
+                log(f"⚙️ Apalancamiento ajustado a {LEVERAGE}x para {symbol}")
+            except Exception as le:
+                log(f"⚠️ No se pudo ajustar apalancamiento (puede que ya esté en {LEVERAGE}x): {le}")
+
+            # 3. Calcular cantidad exacta considerando el apalancamiento del bot
             qty = (MONTO_POR_TRADE * LEVERAGE) / float(price)
             qty = float(ex.amount_to_precision(sym_ccxt, qty))
 
