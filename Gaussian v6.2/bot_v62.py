@@ -29,6 +29,7 @@ LEVERAGE = 10
 # 🔒 Límites de trades
 MAX_TOTAL_TRADES = 10
 MAX_TRADES_POR_PAR = 1
+trade_lock = threading.Lock()
 
 # ════════════════════════════════════════════════════════════════
 # CARGA DE VARIABLES
@@ -162,10 +163,27 @@ def abrir_posicion(symbol, side, price, sl):
     # Normalizar símbolo para Bitget
     sym_ccxt = par_ccxt(symbol)
 
-    # 1. EVITAR DUPLICADOS: Si ya está registrado local o si el exchange dice que hay posición
+    # 1. EVITAR DUPLICADOS LOCALES
     if symbol in trades_abiertos or any(s in symbol for s in trades_abiertos):
         log(f"⚠️ Ya existe una posición abierta para {symbol}. Ignorando duplicado.")
         return None
+
+    # 1.5. EVITAR DUPLICADOS EN BITGET (Hard Check en vivo)
+    try:
+        positions = ex.fetch_positions([sym_ccxt])
+        for p in positions:
+            if abs(float(p.get('contracts', 0))) > 0:
+                log(f"⚠️ DUPLICADO EN EXCHANGE: Ya existe posición para {symbol} en Bitget. Abortando.")
+                if symbol not in trades_abiertos:
+                    trades_abiertos[symbol] = {
+                        "id": f"SYNC-{int(time.time())}", 
+                        "side": p.get('side', 'unknown'), 
+                        "amount": abs(float(p.get('contracts', 0)))
+                    }
+                    save_state()
+                return None
+    except Exception as e:
+        log(f"⚠️ Error al verificar posiciones en exchange: {e}")
 
     max_retries = 3
     for attempt in range(max_retries):
@@ -290,23 +308,29 @@ def webhook():
     record_event(symbol, action, "received", "Webhook reached bot", trade_id=tid)
 
     if action == 'open':
-        if len(trades_abiertos) >= MAX_TOTAL_TRADES:
-            log(f"⚠️ Máximo de trades alcanzado ({MAX_TOTAL_TRADES})")
-            return jsonify({"status": "rejected", "reason": "Max trades reached"}), 200
-        
-        # Pequeña pausa si acabamos de recibir un close para evitar conflicto de órdenes en Bitget
-        if symbol in webhook_eventos and webhook_eventos[-1]['action'] in ['close', 'exit']:
-             log(f"⏳ Pausa de seguridad para {symbol} por cambio de tendencia...")
-             time.sleep(1.0)
-             
-        res = abrir_posicion(symbol, side, price, sl)
-        if res:
-            trades_abiertos[symbol] = {
-                "id": tid, "side": side, "entry": price, "sl": sl, 
-                "amount": res['amount'], "ts": datetime.now().isoformat()
-            }
-            record_event(symbol, action, "opened", "Success", trade_id=tid)
-            return jsonify({"status": "success"}), 200
+        with trade_lock:
+            if len(trades_abiertos) >= MAX_TOTAL_TRADES:
+                log(f"⚠️ Máximo de trades alcanzado ({MAX_TOTAL_TRADES})")
+                return jsonify({"status": "rejected", "reason": "Max trades reached"}), 200
+            
+            # Pequeña pausa si acabamos de recibir un close para evitar conflicto de órdenes en Bitget
+            if symbol in webhook_eventos and webhook_eventos[-1]['action'] in ['close', 'exit']:
+                 log(f"⏳ Pausa de seguridad para {symbol} por cambio de tendencia...")
+                 time.sleep(1.0)
+                 
+            # Si el símbolo ya está, no intentamos abrirlo nuevamente (Double check bajo el candado)
+            if symbol in trades_abiertos:
+                log(f"⚠️ Posición {symbol} ya registrada en memoria bajo bloqueo. Ignorando.")
+                return jsonify({"status": "rejected", "reason": "Already open"}), 200
+
+            res = abrir_posicion(symbol, side, price, sl)
+            if res:
+                trades_abiertos[symbol] = {
+                    "id": tid, "side": side, "entry": price, "sl": sl, 
+                    "amount": res['amount'], "ts": datetime.now().isoformat()
+                }
+                record_event(symbol, action, "opened", "Success", trade_id=tid)
+                return jsonify({"status": "success"}), 200
         
     elif action == 'partial_close':
         if symbol in trades_abiertos:
