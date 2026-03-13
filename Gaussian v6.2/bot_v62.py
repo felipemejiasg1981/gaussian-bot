@@ -134,7 +134,12 @@ load_state()
 # LÓGICA DE TRADING (BITGET)
 # ════════════════════════════════════════════════════════════════
 def par_ccxt(symbol):
-    s = symbol.upper().replace("BINANCE:", "").replace(".P", "").replace("PERP", "").replace("-", "").replace("/", "")
+    # Limpiar prefijos de exchange (ej: BITGET:SAFEUSDT.P -> SAFEUSDT.P)
+    s = symbol.upper()
+    if ":" in s:
+        s = s.split(":")[-1]
+    
+    s = s.replace("BINANCE:", "").replace(".P", "").replace("PERP", "").replace("-", "").replace("/", "")
     if not s.endswith("USDT"): s += "USDT"
     base = s.replace("USDT", "")
     return f"{base}/USDT:USDT"
