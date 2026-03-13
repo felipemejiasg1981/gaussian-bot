@@ -235,7 +235,7 @@ def abrir_posicion(symbol, side, price, sl):
                 log(f"❌ Error final abriendo posición en {symbol} tras {max_retries} intentos: {e}")
                 return None
 
-def cerrar_parcial(symbol, side_presente, pct):
+def cerrar_parcial(symbol, pct):
     sym_ccxt = par_ccxt(symbol)
     if DRY_RUN:
         log(f"🧪 [DRY RUN] PARTIAL CLOSE {pct}% {symbol}")
@@ -245,23 +245,35 @@ def cerrar_parcial(symbol, side_presente, pct):
     if not ex: return False
 
     try:
-        # Obtener posición actual para cerrar el porcentaje exacto
+        # Obtener posición actual directamente de Bitget (STATELESS)
         positions = ex.fetch_positions([sym_ccxt])
+        executed = False
         for p in positions:
             amt_total = abs(float(p.get('contracts', 0)))
             if amt_total > 0:
+                side_presente = 'buy' if p.get('side', 'long') == 'long' else 'sell'
+                
                 amt_cerrar = amt_total * (float(pct) / 100.0)
                 amt_cerrar = float(ex.amount_to_precision(sym_ccxt, amt_cerrar))
+                
                 if amt_cerrar > 0:
                     side_cerrar = 'sell' if side_presente == 'buy' else 'buy'
                     ex.create_order(sym_ccxt, 'market', side_cerrar, amt_cerrar, params={'reduceOnly': True})
-                    log(f"🧩 CIERRE PARCIAL: {symbol} {pct}% ({amt_cerrar} contratos)")
-        return True
+                    log(f"🧩 CIERRE PARCIAL: {symbol} {pct}% ({amt_cerrar} contratos limitados)")
+                    executed = True
+                else:
+                    log(f"⚠️ Cierre parcial descartado para {symbol}: cantidad calculada muy pequeña.")
+        
+        # Si no se encontró ninguna posición para cerrar, loggear
+        if not executed:
+            log(f"⚠️ No hay posición abierta en Bitget para cierre parcial de {symbol}")
+            
+        return executed
     except Exception as e:
-        log(f"❌ Error cierre parcial: {e}")
+        log(f"❌ Error cierre parcial para {symbol}: {e}")
         return False
 
-def cerrar_posicion(symbol, side_presente):
+def cerrar_posicion(symbol):
     sym_ccxt = par_ccxt(symbol)
     if DRY_RUN:
         log(f"🧪 [DRY RUN] CLOSE {symbol}")
@@ -279,6 +291,7 @@ def cerrar_posicion(symbol, side_presente):
         for p in positions:
             amt = abs(float(p.get('contracts', 0)))
             if amt > 0:
+                side_presente = 'buy' if p.get('side', 'long') == 'long' else 'sell'
                 side_cerrar = 'sell' if side_presente == 'buy' else 'buy'
                 ex.create_order(sym_ccxt, 'market', side_cerrar, amt, params={'reduceOnly': True})
                 log(f"🏁 POSICIÓN CERRADA: {symbol} ({amt} contratos)")
@@ -301,7 +314,7 @@ def webhook():
     price  = data.get('price', 0)
     sl     = data.get('sl', 'N/A')
     tid    = data.get('trade_id', 'N/A')
-    pct    = data.get('close_pct', 0)
+    pct    = data.get('close_pct') or 30.0  # Usar 30.0% si falta en el JSON por error
 
     log(f"🚨 WEBHOOK RECIBIDO: {action.upper()} | {symbol} | Trade #{tid}")
     # Guardar evento de recepción inmediata para depuración
@@ -333,19 +346,31 @@ def webhook():
                 return jsonify({"status": "success"}), 200
         
     elif action == 'partial_close':
-        if symbol in trades_abiertos:
-            if cerrar_parcial(symbol, trades_abiertos[symbol]['side'], pct):
-                record_event(symbol, action, "partial", f"Closed {pct}%", trade_id=tid)
-                return jsonify({"status": "success"}), 200
+        # STATELESS CACHE BYPASS: Cerrar parcial incluso si se borró la memoria
+        if pct <= 0: pct = 30.0
+        if cerrar_parcial(symbol, pct):
+            if symbol in trades_abiertos:
+                amt_f = float(trades_abiertos[symbol]['amount'])
+                trades_abiertos[symbol]['amount'] = amt_f - (amt_f * (float(pct)/100.0))
+                save_state()
+            record_event(symbol, action, "partial", f"Closed {pct}%", trade_id=tid)
+            return jsonify({"status": "success"}), 200
+        else:
+            return jsonify({"status": "ignored", "reason": "No position in Bitget or size too small"}), 200
 
     elif action in ['close', 'exit']:
-        if symbol in trades_abiertos:
-            if cerrar_posicion(symbol, trades_abiertos[symbol]['side']):
+        # STATELESS CACHE BYPASS
+        if cerrar_posicion(symbol):
+            if symbol in trades_abiertos:
                 trades_abiertos.pop(symbol)
-                record_event(symbol, action, "closed", "Success", trade_id=tid)
-                return jsonify({"status": "success"}), 200
-
-    return jsonify({"status": "ignored"}), 200
+                save_state()
+            record_event(symbol, action, "closed", "Success", trade_id=tid)
+            return jsonify({"status": "success"}), 200
+        else:
+            if symbol in trades_abiertos:
+                trades_abiertos.pop(symbol)
+                save_state()
+            return jsonify({"status": "ignored", "reason": "No position in Bitget"}), 200
 
 @app.route('/status')
 def status():
