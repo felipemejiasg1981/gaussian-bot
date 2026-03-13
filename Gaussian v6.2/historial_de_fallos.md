@@ -12,4 +12,11 @@ En este archivo registraremos todos los errores, bugs y comportamientos inespera
 ---
 
 ## Registros
-*Aún no se han registrado fallos en esta versión.*
+
+### 2026-03-13 15:10
+- **Símbolo**: General (Todos)
+- **Descripción del Fallo**: Órdenes rechazadas con el mensaje "Confianza insuficiente (Esperaba 100 para 5 estrellas)". 
+- **Posible Causa**: El servidor Railway estaba ejecutando código antiguo (v5/v6.1) porque la carpeta `Gaussian v6.2` y los nuevos archivos de arranque (`main.py`) no se habían subido a GitHub (estaban como untracked).
+- **Solución/Estado**: Resuelto. Se sincronizó el repositorio local con GitHub (`git add .`, `commit`, `push`). Railway ya está desplegando la versión 6.2 real sin el filtro de estrellas.
+
+---
