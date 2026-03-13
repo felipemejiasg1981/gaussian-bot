@@ -1,0 +1,545 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © TrendlineProject
+
+//@version=6
+indicator("Quantum Ribbon Lite", shorttitle="QR Lite", overlay=true, max_lines_count=20)
+
+// ═══════════════════════════════════════════════════════════
+// 🎓 BEGINNER-FRIENDLY SETTINGS
+// ═══════════════════════════════════════════════════════════
+// Only 5 settings - simple and powerful!
+
+i_sensitivity = input.int(5, "Signal Sensitivity", minval=1, maxval=10, tooltip="Controls how often signals appear (1-10)\n• 1-3 = More signals, active trading (1-6 bar cooldown)\n• 4-7 = Balanced signal frequency (8-14 bars)\n• 8-10 = Fewer signals, selective (16-20 bars)")
+
+i_stop_distance = input.string("Normal", "Stop Loss Distance", options=["Tight", "Normal", "Wide"], tooltip="Tight: 1.5x ATR - Smaller risk, more stop-outs\nNormal: 2.0x ATR - Balanced (recommended)\nWide: 2.5x ATR - Larger risk, fewer stop-outs")
+
+i_target_rr = input.string("2R", "Take Profit Target", options=["1.5R", "2R", "3R"], tooltip="1.5R = Take profit at 1.5x your risk\n2R = Take profit at 2x your risk (recommended)\n3R = Take profit at 3x your risk")
+
+i_show_table = input.bool(true, "Show Stats Table", tooltip="Display performance tracking and current trade info")
+
+i_table_size = input.string("Small", "Table Size", options=["Tiny", "Small", "Medium", "Large"], tooltip="Adjust the size of the stats table")
+
+i_show_ribbon_state = input.bool(true, "Show Ribbon State", tooltip="Display ribbon trend direction in the stats table")
+
+i_show_lines = input.bool(true, "Show Risk Lines", tooltip="Display entry, stop loss, and take profit levels on chart")
+
+// ═══════════════════════════════════════════════════════════
+// LINE STYLES
+// ═══════════════════════════════════════════════════════════
+
+i_entry_line_color = input.color(color.white, "Entry Line", group="Line Styles", inline="entry")
+i_entry_line_opacity = input.int(100, "", minval=0, maxval=100, step=5, tooltip="0=Transparent, 100=Solid", group="Line Styles", inline="entry")
+i_entry_line_width = input.int(2, "", minval=1, maxval=5, tooltip="Line width", group="Line Styles", inline="entry")
+
+i_stop_line_color = input.color(color.red, "Stop Loss Line", group="Line Styles", inline="stop_line")
+i_stop_line_opacity = input.int(100, "", minval=0, maxval=100, step=5, tooltip="0=Transparent, 100=Solid", group="Line Styles", inline="stop_line")
+i_stop_line_width = input.int(2, "", minval=1, maxval=5, tooltip="Line width", group="Line Styles", inline="stop_line")
+
+i_tp_line_color = input.color(color.green, "Take Profit Line", group="Line Styles", inline="tp_line")
+i_tp_line_opacity = input.int(100, "", minval=0, maxval=100, step=5, tooltip="0=Transparent, 100=Solid", group="Line Styles", inline="tp_line")
+i_tp_line_width = input.int(2, "", minval=1, maxval=5, tooltip="Line width", group="Line Styles", inline="tp_line")
+
+// ═══════════════════════════════════════════════════════════
+// TABLE STYLES
+// ═══════════════════════════════════════════════════════════
+
+i_table_bg_color = input.color(color.white, "Background", group="Table Styles", inline="table_bg")
+i_table_bg_opacity = input.int(100, "", minval=0, maxval=100, step=5, tooltip="0=Transparent, 100=Solid", group="Table Styles", inline="table_bg")
+
+i_table_text_color = input.color(color.black, "Text Color", group="Table Styles")
+
+i_table_border_color = input.color(color.gray, "Border", group="Table Styles", inline="table_border")
+i_table_border_width = input.int(1, "", minval=0, maxval=3, tooltip="Border width", group="Table Styles", inline="table_border")
+
+// ═══════════════════════════════════════════════════════════
+// INTERNAL SETTINGS (Optimized defaults - not user-adjustable)
+// ═══════════════════════════════════════════════════════════
+
+// Table size helper
+f_get_table_size(size_str) =>
+    size_str == "Tiny" ? size.tiny : size_str == "Small" ? size.small : size_str == "Large" ? size.large : size.normal
+
+table_text_size = f_get_table_size(i_table_size)
+
+// Line style helpers (reversed opacity: user inputs 0-100 where 0=transparent, 100=solid)
+entry_line_color = color.new(i_entry_line_color, 100 - i_entry_line_opacity)
+stop_line_color = color.new(i_stop_line_color, 100 - i_stop_line_opacity)
+tp_line_color = color.new(i_tp_line_color, 100 - i_tp_line_opacity)
+
+// Table style helpers (reversed opacity)
+table_bg_color = color.new(i_table_bg_color, 100 - i_table_bg_opacity)
+table_text_color = i_table_text_color
+table_border_color = i_table_border_color
+
+// Convert user-friendly inputs to technical values
+// Hidden quality filter - blocks signals with confidence < 2.5 (filters out very weak setups)
+min_confidence = 2.5
+atr_multiplier = i_stop_distance == "Tight" ? 1.5 : i_stop_distance == "Normal" ? 2.0 : 2.5
+rr_ratio = i_target_rr == "1.5R" ? 1.5 : i_target_rr == "2R" ? 2.0 : 3.0
+
+// Map sensitivity (1-10) to cooldown (1-20 bars) - lower sensitivity number = more signals
+signal_cooldown = i_sensitivity * 2
+
+// Fixed optimal settings
+atr_length = 14
+ema_fast_base = 21
+ema_slow_base = 60
+pair_width = 7
+
+// Calculate 5 ribbon layers
+f_calculate_ribbon_layers(fast, slow, width) =>
+    total_range = slow - width - fast
+    spacing = total_range / 4.0
+    
+    s1 = fast
+    l1 = s1 + width
+    s2 = math.round(fast + spacing)
+    l2 = s2 + width
+    s3 = math.round(fast + spacing * 2)
+    l3 = s3 + width
+    s4 = math.round(fast + spacing * 3)
+    l4 = s4 + width
+    s5 = math.round(slow - width)
+    l5 = slow
+    
+    [s1, l1, s2, l2, s3, l3, s4, l4, s5, l5]
+
+[ma_len1, ma_len2, ma_len3, ma_len4, ma_len5, ma_len6, ma_len7, ma_len8, ma_len9, ma_len10] = f_calculate_ribbon_layers(ema_fast_base, ema_slow_base, pair_width)
+
+// ═══════════════════════════════════════════════════════════
+// CALCULATIONS
+// ═══════════════════════════════════════════════════════════
+
+// Basic indicators
+atr = ta.atr(atr_length)
+volume_avg = ta.sma(volume, 20)
+volume_ratio = volume / volume_avg
+momentum = ta.change(close, 10)
+
+ema_fast = ta.ema(close, 12)
+ema_slow = ta.ema(close, 26)
+
+// Ribbon MAs
+mashort1 = ta.ema(close, ma_len1)
+malong1 = ta.ema(close, ma_len2)
+mashort2 = ta.ema(close, ma_len3)
+malong2 = ta.ema(close, ma_len4)
+mashort3 = ta.ema(close, ma_len5)
+malong3 = ta.ema(close, ma_len6)
+mashort4 = ta.ema(close, ma_len7)
+malong4 = ta.ema(close, ma_len8)
+mashort5 = ta.ema(close, ma_len9)
+malong5 = ta.ema(close, ma_len10)
+
+// Ribbon alignment analysis
+f_analyze_ribbon() =>
+    bull_score = 0.0
+    bear_score = 0.0
+    
+    bull_score += mashort1 >= malong1 ? 1.0 : 0.0
+    bear_score += mashort1 < malong1 ? 1.0 : 0.0
+    bull_score += mashort2 >= malong2 ? 1.2 : 0.0
+    bear_score += mashort2 < malong2 ? 1.2 : 0.0
+    bull_score += mashort3 >= malong3 ? 1.4 : 0.0
+    bear_score += mashort3 < malong3 ? 1.4 : 0.0
+    bull_score += mashort4 >= malong4 ? 1.6 : 0.0
+    bear_score += mashort4 < malong4 ? 1.6 : 0.0
+    bull_score += mashort5 >= malong5 ? 2.0 : 0.0
+    bear_score += mashort5 < malong5 ? 2.0 : 0.0
+    
+    total = bull_score + bear_score
+    bull_align = bull_score / total
+    
+    state = bull_align >= 0.75 ? "strong_bull" : bull_align >= 0.60 ? "bull" : bull_align <= 0.25 ? "strong_bear" : bull_align <= 0.40 ? "bear" : "neutral"
+    
+    [state, bull_align]
+
+[ribbon_state, ribbon_bull_align] = f_analyze_ribbon()
+
+// Market regime detection
+f_detect_regime() =>
+    bullish_emas = 0
+    bearish_emas = 0
+    
+    bullish_emas += mashort1 > malong1 ? 1 : 0
+    bearish_emas += mashort1 <= malong1 ? 1 : 0
+    bullish_emas += mashort2 > malong2 ? 1 : 0
+    bearish_emas += mashort2 <= malong2 ? 1 : 0
+    bullish_emas += mashort3 > malong3 ? 1 : 0
+    bearish_emas += mashort3 <= malong3 ? 1 : 0
+    bullish_emas += mashort4 > malong4 ? 1 : 0
+    bearish_emas += mashort4 <= malong4 ? 1 : 0
+    bullish_emas += mashort5 > malong5 ? 1 : 0
+    bearish_emas += mashort5 <= malong5 ? 1 : 0
+    
+    ribbon_aligned = bullish_emas >= 4 or bearish_emas >= 4
+    
+    current_spread = math.abs(mashort1 - malong5)
+    past_spread = math.abs(mashort1[10] - malong5[10])
+    ribbon_expanding = current_spread > past_spread * 0.9
+    
+    ribbon_center = (mashort1 + malong5) / 2
+    bars_above = 0
+    bars_below = 0
+    for i = 0 to 10
+        if close[i] > ribbon_center[i]
+            bars_above += 1
+        else
+            bars_below += 1
+    
+    price_consistent = bars_above >= 8 or bars_below >= 8
+    
+    is_trending = ribbon_aligned and price_consistent and ribbon_expanding
+    is_trending ? "trending" : "ranging"
+
+market_regime = f_detect_regime()
+
+// Calculate market health
+f_calculate_health() =>
+    bullish_emas = 0
+    bullish_emas += mashort1 > malong1 ? 1 : 0
+    bullish_emas += mashort2 > malong2 ? 1 : 0
+    bullish_emas += mashort3 > malong3 ? 1 : 0
+    bullish_emas += mashort4 > malong4 ? 1 : 0
+    bullish_emas += mashort5 > malong5 ? 1 : 0
+    
+    bearish_emas = 5 - bullish_emas
+    alignment_strength = math.max(bullish_emas, bearish_emas)
+    
+    health = 0
+    health += alignment_strength == 5 ? 40 : alignment_strength == 4 ? 30 : 20
+    health += market_regime == "trending" ? 30 : 15
+    health += volume_ratio > 1.1 ? 20 : 10
+    
+    avg_spacing = (math.abs(mashort1 - malong1) + math.abs(mashort5 - malong5)) / 2
+    normalized_spacing = avg_spacing / close * 100
+    health += normalized_spacing > 1.0 ? 10 : normalized_spacing > 0.5 ? 5 : 0
+    
+    health
+
+market_health = f_calculate_health()
+
+// Calculate confidence
+f_calculate_confidence(regime, health) =>
+    conf = 0.0
+    
+    if regime == "trending"
+        conf += health > 80 ? 4 : health > 70 ? 3.5 : health > 60 ? 3 : 2
+    else
+        conf += health > 70 ? 3 : health > 50 ? 2 : 1
+    
+    conf += volume_ratio > 1.3 ? 1 : 0
+    
+    momentum_consistency = 0
+    for i = 1 to 10
+        if momentum[i] * momentum > 0
+            momentum_consistency += 1
+    conf += momentum_consistency > 7 ? 1 : 0
+    
+    // Ribbon boost
+    base_boost = (ribbon_state == "strong_bull" or ribbon_state == "strong_bear") ? 1.5 : 
+                 (ribbon_state == "bull" or ribbon_state == "bear") ? 0.9 : 0.0
+    
+    conf += conf < 3.0 ? base_boost * 1.5 : base_boost * 0.8
+    
+    math.min(conf, 8)
+
+signal_confidence = f_calculate_confidence(market_regime, market_health)
+
+// ═══════════════════════════════════════════════════════════
+// RISK MANAGEMENT
+// ═══════════════════════════════════════════════════════════
+
+f_calculate_stop(entry, direction) =>
+    atr_stop = atr * atr_multiplier
+    direction == 1 ? entry - atr_stop : entry + atr_stop
+
+f_calculate_target(entry, stop, direction) =>
+    risk = math.abs(entry - stop)
+    reward = risk * rr_ratio
+    direction == 1 ? entry + reward : entry - reward
+
+var float entry_level = na
+var float stop_level = na
+var float tp_level = na
+var int trade_direction = 0
+var int entry_bar = 0
+var line entry_line = na
+var line stop_line = na
+var line tp_line = na
+
+// Win/Loss tracking
+var int total_wins = 0
+var int total_losses = 0
+
+// P&L tracking
+var float total_pnl = 0.0
+var float total_risk = 0.0
+
+// ═══════════════════════════════════════════════════════════
+// SIGNAL GENERATION
+// ═══════════════════════════════════════════════════════════
+
+// Trending signals
+f_trending_signals() =>
+    ema_alignment = ema_fast > ema_slow
+    momentum_strong = math.abs(momentum) > atr * 0.5
+    volume_confirmation = volume_ratio > 1.1
+    
+    ribbon_confirms_long = ribbon_state == "strong_bull" or ribbon_state == "bull"
+    ribbon_confirms_short = ribbon_state == "strong_bear" or ribbon_state == "bear"
+    
+    long_sig = ema_alignment and momentum > 0 and momentum_strong and volume_confirmation and ribbon_confirms_long
+    short_sig = not ema_alignment and momentum < 0 and momentum_strong and volume_confirmation and ribbon_confirms_short
+    
+    [long_sig, short_sig]
+
+[trending_long, trending_short] = f_trending_signals()
+
+// Always use trending mode (simplified for beginners)
+long_condition = trending_long
+short_condition = trending_short
+
+// Signal cooldown
+var int bars_since_signal = 999
+bars_since_signal += 1
+
+var bool confirmed_long = false
+var bool confirmed_short = false
+
+if barstate.isconfirmed
+    cooldown_ready = bars_since_signal >= signal_cooldown
+    confirmed_long := long_condition and signal_confidence >= min_confidence and cooldown_ready
+    confirmed_short := short_condition and signal_confidence >= min_confidence and cooldown_ready
+else
+    confirmed_long := false
+    confirmed_short := false
+
+// Block all signals if position is already open (Hold to Completion mode)
+bool long_entry = confirmed_long and na(entry_level)
+bool short_entry = confirmed_short and na(entry_level)
+
+// ═══════════════════════════════════════════════════════════
+// POSITION MANAGEMENT
+// ═══════════════════════════════════════════════════════════
+
+// New position
+if long_entry or short_entry
+    direction = long_entry ? 1 : -1
+    bars_since_signal := 0
+    
+    // Create new position (only if no active position)
+    if na(entry_level)
+        entry_level := close
+        stop_level := f_calculate_stop(entry_level, direction)
+        tp_level := f_calculate_target(entry_level, stop_level, direction)
+        trade_direction := direction
+        entry_bar := bar_index
+        
+        if not na(entry_line)
+            line.delete(entry_line)
+        if not na(stop_line)
+            line.delete(stop_line)
+        if not na(tp_line)
+            line.delete(tp_line)
+        
+        if i_show_lines
+            entry_line := line.new(x1=entry_bar, y1=entry_level, x2=entry_bar + 1, y2=entry_level, color=entry_line_color, width=i_entry_line_width, style=line.style_dotted, extend=extend.none)
+            stop_line := line.new(x1=entry_bar, y1=stop_level, x2=entry_bar + 1, y2=stop_level, color=stop_line_color, width=i_stop_line_width, style=line.style_dotted, extend=extend.none)
+            tp_line := line.new(x1=entry_bar, y1=tp_level, x2=entry_bar + 1, y2=tp_level, color=tp_line_color, width=i_tp_line_width, style=line.style_dotted, extend=extend.none)
+
+// Check for exit (only on bars after entry)
+if not na(stop_level) and not na(tp_level) and bar_index > entry_bar
+    stop_hit = (trade_direction == 1 and low <= stop_level) or (trade_direction == -1 and high >= stop_level)
+    tp_hit = (trade_direction == 1 and high >= tp_level) or (trade_direction == -1 and low <= tp_level)
+    
+    // Determine which hit first
+    actual_stop = false
+    actual_tp = false
+    
+    if stop_hit and tp_hit
+        if trade_direction == 1
+            if open <= stop_level
+                actual_stop := true
+            else if open >= tp_level
+                actual_tp := true
+            else
+                dist_to_stop = entry_level - stop_level
+                dist_to_tp = tp_level - entry_level
+                actual_stop := dist_to_stop < dist_to_tp
+                actual_tp := dist_to_tp <= dist_to_stop
+        else
+            if open >= stop_level
+                actual_stop := true
+            else if open <= tp_level
+                actual_tp := true
+            else
+                dist_to_stop = stop_level - entry_level
+                dist_to_tp = entry_level - tp_level
+                actual_stop := dist_to_stop < dist_to_tp
+                actual_tp := dist_to_tp <= dist_to_stop
+    else
+        actual_stop := stop_hit
+        actual_tp := tp_hit
+    
+    if actual_stop or actual_tp
+        // Calculate P&L for this trade
+        risk_amount = math.abs(entry_level - stop_level)
+        
+        if actual_tp
+            total_wins += 1
+            pnl = risk_amount * rr_ratio
+            total_pnl := total_pnl + pnl
+            total_risk := total_risk + risk_amount
+            label.new(bar_index, tp_level, "✓ TARGET", style=label.style_label_left, color=color.new(color.green, 0), textcolor=color.white, size=size.small)
+        else
+            total_losses += 1
+            pnl = -risk_amount
+            total_pnl := total_pnl + pnl
+            total_risk := total_risk + risk_amount
+            label.new(bar_index, stop_level, "✗ STOP", style=label.style_label_left, color=color.new(color.red, 0), textcolor=color.white, size=size.small)
+        
+        // Reset position
+        entry_level := na
+        stop_level := na
+        tp_level := na
+        trade_direction := 0
+        
+        if not na(entry_line)
+            line.delete(entry_line)
+        if not na(stop_line)
+            line.delete(stop_line)
+        if not na(tp_line)
+            line.delete(tp_line)
+
+// Update lines
+if not na(entry_line) and i_show_lines
+    line.set_x2(entry_line, bar_index)
+if not na(stop_line) and i_show_lines
+    line.set_x2(stop_line, bar_index)
+if not na(tp_line) and i_show_lines
+    line.set_x2(tp_line, bar_index)
+
+// ═══════════════════════════════════════════════════════════
+// VISUALIZATION
+// ═══════════════════════════════════════════════════════════
+
+// Entry signals
+if long_entry
+    label.new(bar_index, low, "BUY", style=label.style_label_up, color=color.new(color.green, 0), textcolor=color.white, size=size.normal)
+
+if short_entry
+    label.new(bar_index, high, "SELL", style=label.style_label_down, color=color.new(color.red, 0), textcolor=color.white, size=size.normal)
+
+// Ribbon colors
+f_get_color(is_bull, layer) =>
+    bull_colors = array.from(#00d4ff, #00b8e6, #0099cc, #007fb3, #006699)
+    bear_colors = array.from(#ff0066, #e6005c, #cc0052, #b30047, #99003d)
+    is_bull ? array.get(bull_colors, layer - 1) : array.get(bear_colors, layer - 1)
+
+cloudcolor1 = f_get_color(mashort1 >= malong1, 1)
+cloudcolor2 = f_get_color(mashort2 >= malong2, 2)
+cloudcolor3 = f_get_color(mashort3 >= malong3, 3)
+cloudcolor4 = f_get_color(mashort4 >= malong4, 4)
+cloudcolor5 = f_get_color(mashort5 >= malong5, 5)
+
+// Plot ribbon
+plot1 = plot(mashort1, color=na, display=display.none)
+plot2 = plot(malong1, color=na, display=display.none)
+plot3 = plot(mashort2, color=na, display=display.none)
+plot4 = plot(malong2, color=na, display=display.none)
+plot5 = plot(mashort3, color=na, display=display.none)
+plot6 = plot(malong3, color=na, display=display.none)
+plot7 = plot(mashort4, color=na, display=display.none)
+plot8 = plot(malong4, color=na, display=display.none)
+plot9 = plot(mashort5, color=na, display=display.none)
+plot10 = plot(malong5, color=na, display=display.none)
+
+fill(plot1, plot2, color=color.new(cloudcolor1, 45), title="Cloud 1")
+fill(plot3, plot4, color=color.new(cloudcolor2, 50), title="Cloud 2")
+fill(plot5, plot6, color=color.new(cloudcolor3, 55), title="Cloud 3")
+fill(plot7, plot8, color=color.new(cloudcolor4, 60), title="Cloud 4")
+fill(plot9, plot10, color=color.new(cloudcolor5, 65), title="Cloud 5")
+
+// ═══════════════════════════════════════════════════════════
+// INFO TABLE
+// ═══════════════════════════════════════════════════════════
+
+var table info_table = table.new(position.top_right, 2, 8, bgcolor=table_bg_color, border_width=i_table_border_width, border_color=table_border_color)
+
+if barstate.islast and i_show_table
+    row = 0
+    
+    // Ribbon state (if enabled)
+    if i_show_ribbon_state
+        ribbon_status = ribbon_state == "strong_bull" ? "🟢 Strong Bull" : ribbon_state == "bull" ? "🟢 Bullish" : ribbon_state == "strong_bear" ? "🔴 Strong Bear" : ribbon_state == "bear" ? "🔴 Bearish" : "⚪ Neutral"
+        table.cell(info_table, 0, row, "Ribbon", text_color=table_text_color, text_size=table_text_size)
+        table.cell(info_table, 1, row, ribbon_status, text_color=table_text_color, text_size=table_text_size)
+        row += 1
+    
+    // Status
+    if not na(entry_level)
+        status = trade_direction == 1 ? "LONG" : "SHORT"
+        status_bg = trade_direction == 1 ? color.new(color.green, 70) : color.new(color.red, 70)
+        table.cell(info_table, 0, row, "Status", text_color=table_text_color, text_size=table_text_size)
+        table.cell(info_table, 1, row, status, text_color=table_text_color, text_size=table_text_size, bgcolor=status_bg)
+        row += 1
+        
+        // Entry
+        table.cell(info_table, 0, row, "Entry", text_color=table_text_color, text_size=table_text_size, bgcolor=color.new(color.yellow, 80))
+        table.cell(info_table, 1, row, str.tostring(entry_level, "#.##"), text_color=table_text_color, text_size=table_text_size, bgcolor=color.new(color.yellow, 80))
+        row += 1
+        
+        // Stop
+        table.cell(info_table, 0, row, "Stop", text_color=table_text_color, text_size=table_text_size)
+        table.cell(info_table, 1, row, str.tostring(stop_level, "#.##"), text_color=table_text_color, text_size=table_text_size)
+        row += 1
+        
+        // Target
+        table.cell(info_table, 0, row, "Target", text_color=table_text_color, text_size=table_text_size)
+        table.cell(info_table, 1, row, str.tostring(tp_level, "#.##"), text_color=table_text_color, text_size=table_text_size)
+        row += 1
+    else
+        table.cell(info_table, 0, row, "Status", text_color=table_text_color, text_size=table_text_size)
+        table.cell(info_table, 1, row, "Waiting", text_color=table_text_color, text_size=table_text_size, bgcolor=color.new(color.gray, 90))
+        row += 1
+    
+    // Performance
+    total_trades = total_wins + total_losses
+    if total_trades > 0
+        perf_text = str.tostring(total_wins) + "W/" + str.tostring(total_losses) + "L"
+        win_rate = total_wins / total_trades * 100
+        win_color = win_rate >= 60 ? color.new(color.green, 85) : win_rate >= 50 ? color.new(color.blue, 85) : win_rate >= 40 ? color.new(color.orange, 85) : color.new(color.red, 85)
+        
+        table.cell(info_table, 0, row, "Performance", text_color=table_text_color, text_size=table_text_size)
+        table.cell(info_table, 1, row, perf_text, text_color=table_text_color, text_size=table_text_size, bgcolor=win_color)
+        row += 1
+        
+        // Win Rate
+        table.cell(info_table, 0, row, "Win Rate", text_color=table_text_color, text_size=table_text_size)
+        table.cell(info_table, 1, row, str.tostring(win_rate, "#") + "%", text_color=table_text_color, text_size=table_text_size, bgcolor=win_color)
+        row += 1
+    
+    // P&L - show % when in trade, N/A when flat
+    if not na(entry_level)
+        // In trade - show current P&L as %
+        current_pnl_pct = trade_direction == 1 ? ((close - entry_level) / entry_level * 100) : ((entry_level - close) / entry_level * 100)
+        pnl_color = current_pnl_pct > 0 ? color.new(color.green, 85) : current_pnl_pct < 0 ? color.new(color.red, 85) : color.new(color.gray, 85)
+        pnl_sign = current_pnl_pct > 0 ? "+" : ""
+        pnl_text = pnl_sign + str.tostring(current_pnl_pct, "#.##") + "%"
+        
+        table.cell(info_table, 0, row, "P&L", text_color=table_text_color, text_size=table_text_size)
+        table.cell(info_table, 1, row, pnl_text, text_color=table_text_color, text_size=table_text_size, bgcolor=pnl_color)
+    else
+        // No trade - show N/A
+        table.cell(info_table, 0, row, "P&L", text_color=table_text_color, text_size=table_text_size)
+        table.cell(info_table, 1, row, "N/A", text_color=table_text_color, text_size=table_text_size, bgcolor=color.new(color.gray, 90))
+
+// ═══════════════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════════════
+
+alertcondition(long_entry, "Buy Signal", "Quantum Ribbon Lite: BUY signal detected")
+alertcondition(short_entry, "Sell Signal", "Quantum Ribbon Lite: SELL signal detected")
+alertcondition(not na(stop_level) and ((trade_direction == 1 and low <= stop_level) or (trade_direction == -1 and high >= stop_level)), "Stop Hit", "Quantum Ribbon Lite: Stop loss hit")
+alertcondition(not na(tp_level) and ((trade_direction == 1 and high >= tp_level) or (trade_direction == -1 and low <= tp_level)), "Target Hit", "Quantum Ribbon Lite: Take profit reached")

@@ -1,0 +1,22 @@
+{
+  "all_symbols": 539,
+  "non_rwa": 499,
+  "crypto_only_heuristic": 496,
+  "sample_prefixed": [
+    "BITGET:BTCUSDT.P",
+    "BITGET:ETHUSDT.P",
+    "BITGET:XRPUSDT.P",
+    "BITGET:BCHUSDT.P",
+    "BITGET:LTCUSDT.P",
+    "BITGET:ADAUSDT.P",
+    "BITGET:ETCUSDT.P",
+    "BITGET:LINKUSDT.P",
+    "BITGET:TRXUSDT.P",
+    "BITGET:DOTUSDT.P",
+    "BITGET:DOGEUSDT.P",
+    "BITGET:SOLUSDT.P",
+    "BITGET:BNBUSDT.P",
+    "BITGET:UNIUSDT.P",
+    "BITGET:ICPUSDT.P"
+  ]
+}

@@ -1,0 +1,34 @@
+[
+    {
+        "ts": "2026-03-13T11:38:28.716653",
+        "symbol": "PEPEUSDT",
+        "action": "open",
+        "status": "opened",
+        "reason": "Success",
+        "trade_id": 999
+    },
+    {
+        "ts": "2026-03-13T11:38:31.564924",
+        "symbol": "PEPEUSDT",
+        "action": "partial_close",
+        "status": "partial",
+        "reason": "Closed 30%",
+        "trade_id": 999
+    },
+    {
+        "ts": "2026-03-13T11:38:34.527051",
+        "symbol": "PEPEUSDT",
+        "action": "close",
+        "status": "closed",
+        "reason": "Success",
+        "trade_id": 999
+    },
+    {
+        "ts": "2026-03-13T15:05:04.008131",
+        "symbol": "LIGHTUSDT.P",
+        "action": "open",
+        "status": "opened",
+        "reason": "Success",
+        "trade_id": 111
+    }
+]

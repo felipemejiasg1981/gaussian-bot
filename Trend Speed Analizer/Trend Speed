@@ -1,0 +1,229 @@
+// This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
+// © Zeiierman {
+//@version=6
+indicator('Trend Speed Analyzer (Zeiierman)', overlay = false)
+//~~}
+
+// ~~ Tooltips {
+string t1 = 'Maximum Length: This parameter sets the upper limit for the number of bars considered in the dynamic moving average. A higher value smooths out the trend line, making it less reactive to minor fluctuations but slower to adapt to sudden price movements. Use higher values for long-term trend analysis and lower values for faster-moving markets.'
+string t2 = 'Accelerator Multiplier: Adjusts the responsiveness of the dynamic moving average to price changes. A larger value makes the trend more reactive but can introduce noise in choppy markets. Lower values create a smoother trend but may lag behind rapid price movements. This is particularly useful in volatile markets where precise sensitivity is needed.'
+string t5 = 'Enable Candles: When enabled, the candlesticks on the chart will be color-coded based on the calculated trend speed. This provides a visual representation of momentum, making it easier to spot shifts in market dynamics. Disable this if you prefer the standard candlestick colors.'
+string t6 = 'Collection Period: Defines the number of bars used to normalize trend speed values. A higher value includes a broader historical range, smoothing out the speed calculation. Lower values make the speed analysis more sensitive to recent price changes, ideal for short-term trading.'
+string t7 = 'Enable Table: Activates a statistical table that provides an overview of key metrics, such as average wave height, maximum wave height, dominance, and wave ratios. Useful for traders who want numerical insights to complement visual trend analysis.'
+string t8 = 'Lookback Period: Determines how many historical bars are used for calculating bullish and bearish wave data. A longer lookback period provides a more comprehensive view of market trends but may dilute sensitivity to recent market conditions. Shorter periods focus on recent data.'
+string t9 = 'Start Date: Sets the starting point for all calculations. This allows you to analyze data only from a specific date onward, which is useful for isolating trends within a certain period or avoiding historical noise.'
+string t10 = 'Timer Option: Select between using a custom start date or starting from the first available bar on the chart. The \'Custom\' option works with the Start Date setting, while \'From start\' includes all available data.'
+
+// Tooltips for Table Cells
+string tt1 = 'Average Wave: Shows the average size of bullish or bearish waves during the lookback period. Use this to assess overall market strength. Larger values indicate stronger trends, and comparing bullish vs bearish averages can reveal market bias. For instance, a higher bullish average suggests a stronger uptrend.'
+string tt2 = 'Max Wave: Displays the largest bullish or bearish wave during the lookback period. Use this to identify peak market momentum. A significantly higher bullish or bearish max wave indicates where the market may have shown extreme trend strength in that direction.'
+string tt3 = 'Current Wave Ratio (Average): Compares the current wave\'s size to the average wave size for both bullish and bearish trends. A value above 1 indicates the current wave is stronger than the historical average, which may signal increased market momentum. Use this to evaluate if the current move is significant compared to past trends.'
+string tt4 = 'Current Wave Ratio (Max): Compares the current wave\'s size to the maximum wave size for both bullish and bearish trends. A value above 1 suggests the current wave is setting new highs in strength, which could indicate a breakout or strong momentum in the trend direction.'
+string tt5 = 'Dominance (Average): The net difference between the average bullish and bearish wave sizes. Positive values suggest bullish dominance over time, while negative values indicate bearish dominance. Use this to determine which side (bulls or bears) has had consistent control of the market over the lookback period.'
+string tt6 = 'Dominance (Max): The net difference between the largest bullish and bearish wave sizes. Positive values suggest bulls have dominated with stronger individual waves, while negative values indicate bears have produced stronger waves. Use this to gauge the most significant power shifts in the market.'
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+max_length       = input.int(50, minval = 1, title = 'Maximum Length', group = 'Dynamic Moving Average', tooltip = t1)
+accel_multiplier = input.float(5.0, minval = 0.0, step = 1.1, title = 'Accelerator Multiplier', group = 'Dynamic Moving Average', tooltip = t2)
+
+tbl_            = input.bool(true, title = 'Enable Table', group = 'Wave Analysis', tooltip = t7)
+lookback_period = input.int(100, minval = 1, step = 1, title = 'Lookback Period', group = 'Wave Analysis', tooltip = t8)
+
+candle = input.bool(true, title = 'Enable Candles', group = 'Trend Visualization', tooltip = t5)
+collen = input.int(100, step = 10, minval = 5, title = 'Collection Period', group = 'Trend Visualization', tooltip = t6)
+
+up_col = input.color(color.lime, title = 'Dynamic Trend', group = 'Trend Visualization', inline = 'Trend')
+dn_col = input.color(color.red, title = '', group = 'Trend Visualization', inline = 'Trend')
+up_hist_col  = input.color(#82ffc3, title = 'Trend Speed Up', group = 'Trend Visualization', inline = 'up')
+up_hist_col_ = input.color(color.lime, title = '', group = 'Trend Visualization', inline = 'up')
+dn_hist_col  = input.color(color.red, title = 'Trend Speed Dn', group = 'Trend Visualization', inline = 'dn')
+dn_hist_col_ = input.color(#f78c8c, title = '', group = 'Trend Visualization', inline = 'dn')
+
+start = input.time(timestamp('1 Jan 2020 00:00 +0000'), title = 'Start Date', group = 'Time Settings', tooltip = t9, inline = 'startdate')
+timer = input.string('From start', title = 'Timer Option', options = ['Custom', 'From start'], group = 'Time Settings', tooltip = t10, inline = 'startdate')
+
+// ~~  Dynamic Average {
+counts_diff         = close
+max_abs_counts_diff = ta.highest(math.abs(counts_diff), 200)
+counts_diff_norm    = (counts_diff + max_abs_counts_diff) / (2 * max_abs_counts_diff)
+dyn_length          = 5 + counts_diff_norm * (max_length - 5)
+
+// ~~ Function to compute the accelerator factor with normalization of delta_counts_diff {
+// Parameters:
+// - counts_diff (float): Difference between bullish and bearish counts
+// - prev_counts_diff (float): Previous value of counts_diff
+// Returns: Accelerator factor (float)
+calc_accel_factor(float counts_diff, float prev_counts_diff) =>
+    // Compute the change in counts_diff
+    delta_counts_diff = math.abs(counts_diff - prev_counts_diff)
+
+    // Normalize delta_counts_diff over last 200 bars
+    float max_delta_counts_diff = ta.highest(delta_counts_diff, 200)
+    max_delta_counts_diff := max_delta_counts_diff == 0 ? 1 : max_delta_counts_diff
+
+    // Compute accelerator factor
+    float accel_factor = delta_counts_diff / max_delta_counts_diff
+    
+    // Return accelerator factor
+    accel_factor
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+// ~~ Function to adjust alpha using the accelerator factor {
+// Parameters:
+// - dyn_length (float): The dynamic length for the moving average
+// - accel_factor (float): The accelerator factor to adjust smoothing
+// - accel_multiplier (float): Multiplier to control the strength of the acceleration
+// Returns: Adjusted alpha (float)
+adjust_alpha(float dyn_length, float accel_factor, float accel_multiplier) =>
+    // Adjust alpha with accelerator factor
+    alpha_base = 2 / (dyn_length + 1)
+    alpha = alpha_base * (1 + accel_factor * accel_multiplier)
+    alpha := math.min(1, alpha)  // Ensure alpha does not exceed 1
+
+    // Return the adjusted alpha
+    alpha
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+// ~~ Accelerator Factor 
+accel_factor = calc_accel_factor(counts_diff, nz(counts_diff[1]))
+alpha        = adjust_alpha(dyn_length, accel_factor, accel_multiplier)
+
+// ~~ Compute dynamic Ema 
+var float dyn_ema = na
+dyn_ema := na(dyn_ema[1]) ? close : alpha * close + (1 - alpha) * dyn_ema[1]
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+// ~~ Trend Speed {
+trend   = dyn_ema
+bullsrc = close
+bearsrc = close
+
+type TrendData
+	array<float> change
+	array<int> t
+
+StartTime() =>
+    time > start
+
+var bullish = TrendData.new(array.new<float>(), array.new<int>())
+var bearish = TrendData.new(array.new<float>(), array.new<int>())
+var x1 = int(na)
+var y1 = float(na)
+var pos = 0
+var speed = 0.0
+c = ta.rma(close, 10)
+o = ta.rma(open, 10)
+
+// ~~ First value {
+if na(x1) and StartTime() or na(x1) and timer == 'From start'
+    x1 := bar_index
+    y1 := o
+    y1
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+// ~~ Trend direction {
+if StartTime() or timer == 'From start'
+    if bullsrc > trend and bullsrc[1] <= trend
+        bearish.change.unshift(ta.lowest(speed, bar_index - x1))
+        bearish.t.unshift(bar_index - x1)
+        x1 := bar_index
+        y1 := bullsrc
+        pos := 1
+        speed := c - o
+        speed
+    if bearsrc < trend and bearsrc[1] >= trend
+        bullish.change.unshift(ta.highest(speed, bar_index - x1))
+        bullish.t.unshift(bar_index - x1)
+        x1 := bar_index
+        y1 := bearsrc
+        pos := -1
+        speed := c - o
+        speed
+speed := speed + c - o
+speedGradient = color.from_gradient(speed, ta.min(-speed / 3), ta.max(speed / 3), color.red, color.lime)
+trendspeed = ta.hma(speed, 5)
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+// ~~ Plots {
+// ~~ Trend Plot {
+rma_dyn_ema(x, p) =>
+    average = ta.rma(dyn_ema[x], p)
+    average
+colour    = ta.wma(close, 2) > dyn_ema ? up_col : dn_col
+fillColor = rma_dyn_ema(0, 5) > rma_dyn_ema(1, 5) ? color.new(up_col, 70) : color.new(dn_col, 70)
+p1 = plot(dyn_ema, color = colour, linewidth = 2, title = 'Dynamic Trend', force_overlay = true)
+p2 = plot(ta.rma(hl2, 50), display = display.none, editable = false, force_overlay = true)
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+min_speed = ta.lowest(speed, collen)
+max_speed = ta.highest(speed, collen)
+normalized_speed = (speed - min_speed) / (max_speed - min_speed)
+speedGradient1   = speed < 0 ? color.from_gradient(normalized_speed, 0.0, 0.5, dn_hist_col, dn_hist_col_) : color.from_gradient(normalized_speed, 0.5, 1.0, up_hist_col, up_hist_col_)
+
+plot(StartTime() or timer == 'From start' ? trendspeed : na, title = 'Trend Speed', color = speedGradient1, style = plot.style_columns)
+plotcandle(open, high, low, close, color = candle ? speedGradient1 : na, wickcolor = candle ? speedGradient1 : na, bordercolor = candle ? speedGradient1 : na, force_overlay = true)
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+// ~~ Table {
+if barstate.islast and tbl_
+    // Calculate recent bullish and bearish changes
+    bullish_recent = bullish.change.slice(0, math.min(lookback_period, bullish.change.size()))
+    bearish_recent = bearish.change.slice(0, math.min(lookback_period, bearish.change.size()))
+
+    // Calculate stats
+    bull_max = bullish_recent.max()
+    bear_max = bearish_recent.min()
+    bull_avg = bullish_recent.avg()
+    bear_avg = bearish_recent.avg()
+
+    // Calculate wave size ratios for max and average wave heights
+    wave_size_ratio_avg = bull_avg / math.abs(bear_avg)
+    wave_size_text_avg  = str.tostring(math.round(wave_size_ratio_avg, 2)) + 'x'
+    wave_size_color_avg = wave_size_ratio_avg > 0 ? color.lime : color.red
+
+    wave_size_ratio_max = bull_max / math.abs(bear_max)
+    wave_size_text_max  = str.tostring(math.round(wave_size_ratio_max, 2)) + 'x'
+    wave_size_color_max = wave_size_ratio_max > 0 ? color.lime : color.red
+
+    // Dominance calculation
+    dominance_avg_value = bull_avg - math.abs(bear_avg)
+    dominance_avg_text  = dominance_avg_value > 0 ? 'Bullish +' + str.tostring(math.round(wave_size_ratio_avg, 2))
+     + 'x' : 'Bearish -' + str.tostring(math.round(1 / wave_size_ratio_avg, 2)) + 'x'
+    dominance_avg_color = dominance_avg_value > 0 ? color.lime : color.red
+
+    dominance_max_value = bull_max - math.abs(bear_max)
+    dominance_max_text  = dominance_max_value > 0 ? 'Bullish +' + str.tostring(math.round(wave_size_ratio_max, 2))
+     + 'x' : 'Bearish -' + str.tostring(math.round(1 / wave_size_ratio_max, 2)) + 'x'
+    dominance_max_color = dominance_max_value > 0 ? color.lime : color.red
+
+    // Current wave calculations
+    current_wave       = speed
+    current_wave_color = current_wave > 0 ? color.lime : color.red
+
+    current_ratio_avg = current_wave > 0 ? current_wave / bull_avg : current_wave / math.abs(bear_avg)
+    current_ratio_max = current_wave > 0 ? current_wave / bull_max : current_wave / math.abs(bear_max)
+
+    current_text_avg = str.tostring(math.round(current_ratio_avg, 2)) + 'x'
+    current_text_max = str.tostring(math.round(current_ratio_max, 2)) + 'x'
+
+    current_color_avg = current_ratio_avg > 0 ? color.lime : color.red
+    current_color_max = current_ratio_max > 0 ? color.lime : color.red
+
+    // Table
+    var tbl = table.new(position.top_right, 3, 3, force_overlay = true)
+    // Header Row
+    table.cell(tbl, 0, 0, '', text_color = chart.fg_color, tooltip = '')
+    table.cell(tbl, 0, 1, 'Average Wave', text_color = chart.fg_color, tooltip = tt1)
+    table.cell(tbl, 0, 2, 'Max Wave', text_color = chart.fg_color, tooltip = tt2)
+
+    // Current Wave Ratio Row
+    table.cell(tbl, 1, 0, 'Current Wave Ratio', text_color = chart.fg_color, tooltip = '')
+    table.cell(tbl, 1, 1, current_text_avg, text_color = current_color_avg, tooltip = tt3)
+    table.cell(tbl, 1, 2, current_text_max, text_color = current_color_max, tooltip = tt4)
+
+    // Dominance Row
+    table.cell(tbl, 2, 0, 'Dominance', text_color = chart.fg_color, tooltip = '')
+    table.cell(tbl, 2, 1, dominance_avg_text, text_color = dominance_avg_color, tooltip = tt5)
+    table.cell(tbl, 2, 2, dominance_max_text, text_color = dominance_max_color, tooltip = tt6)
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}

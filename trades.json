@@ -1,0 +1,16 @@
+{
+    "AZTECUSDT": {
+        "trade_id": "TEST-AZTEC-LONG-1773286259",
+        "side": "buy",
+        "entry": 0.02168,
+        "sl": "0.02101",
+        "emergency_sl": "0.02101",
+        "trend_line": "0.02101",
+        "posicion_pct": 70,
+        "order_id": "1415830702590636033",
+        "symbol_ccxt": "AZTEC/USDT:USDT",
+        "cantidad_original": 3693.0,
+        "sl_order_id": "1415963193469558784",
+        "synced_from_exchange": true
+    }
+}

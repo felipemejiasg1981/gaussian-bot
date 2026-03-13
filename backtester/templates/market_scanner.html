@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gaussian Crypto Scanner</title>
+    <style>
+        :root {
+            --bg: #071018;
+            --panel: #0d1723;
+            --panel-2: #102132;
+            --line: #20384d;
+            --text: #d9e7f2;
+            --muted: #89a0b6;
+            --good: #2fd67b;
+            --bad: #ff6876;
+            --warn: #ffcb57;
+            --accent: #54c7ff;
+            --accent-2: #8df2c8;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Avenir Next", "Segoe UI", sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at 0% 0%, rgba(84,199,255,0.14), transparent 28%),
+                radial-gradient(circle at 100% 0%, rgba(141,242,200,0.10), transparent 24%),
+                linear-gradient(180deg, #081019 0%, #050b11 100%);
+            min-height: 100vh;
+        }
+
+        .wrap {
+            max-width: 1580px;
+            margin: 0 auto;
+            padding: 26px;
+        }
+
+        .hero {
+            display: grid;
+            grid-template-columns: 1.25fr 0.75fr;
+            gap: 18px;
+            margin-bottom: 20px;
+        }
+
+        .card, .panel {
+            border: 1px solid var(--line);
+            border-radius: 26px;
+            background: linear-gradient(180deg, rgba(16,33,50,0.96), rgba(7,16,24,0.96));
+            box-shadow: 0 18px 46px rgba(0,0,0,0.32);
+        }
+
+        .card {
+            padding: 26px;
+        }
+
+        .eyebrow {
+            color: var(--accent-2);
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            font-size: 12px;
+            margin-bottom: 12px;
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            font-size: 42px;
+            line-height: 1.02;
+            letter-spacing: -0.05em;
+        }
+
+        .sub {
+            color: var(--muted);
+            font-size: 16px;
+            line-height: 1.55;
+            max-width: 840px;
+        }
+
+        .mini-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .mini {
+            padding: 18px;
+            border-radius: 18px;
+            border: 1px solid var(--line);
+            background: rgba(7,16,24,0.72);
+        }
+
+        .mini .k {
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            font-size: 11px;
+        }
+
+        .mini .v {
+            margin-top: 8px;
+            font-size: 30px;
+            font-weight: 700;
+        }
+
+        .controls {
+            padding: 22px;
+            margin-bottom: 18px;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 0.75fr 0.75fr 0.75fr auto;
+            gap: 12px;
+            align-items: end;
+        }
+
+        .field label {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            font-size: 12px;
+        }
+
+        select, input[type="number"], input[type="text"] {
+            width: 100%;
+            padding: 14px;
+            border-radius: 16px;
+            border: 1px solid var(--line);
+            background: rgba(7,16,24,0.68);
+            color: var(--text);
+            font-size: 15px;
+        }
+
+        .checks {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 16px;
+            padding: 12px 14px;
+            min-height: 52px;
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            background: rgba(7,16,24,0.68);
+        }
+
+        .checks label {
+            margin: 0;
+            color: var(--text);
+            font-size: 14px;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        .wide {
+            grid-column: span 2;
+        }
+
+        button {
+            min-width: 200px;
+            padding: 14px 18px;
+            border: none;
+            border-radius: 16px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            color: #07131e;
+            font-size: 15px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: wait;
+        }
+
+        .status {
+            margin-top: 14px;
+            color: var(--muted);
+            min-height: 20px;
+        }
+
+        .section {
+            margin-top: 20px;
+        }
+
+        .section-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        h2 {
+            margin: 0;
+            font-size: 22px;
+            letter-spacing: -0.03em;
+        }
+
+        .pill {
+            padding: 8px 12px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: rgba(7,16,24,0.66);
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .rank-card {
+            padding: 16px;
+            border-radius: 18px;
+            border: 1px solid var(--line);
+            background: rgba(7,16,24,0.72);
+        }
+
+        .rank-card h3 {
+            margin: 10px 0 6px;
+            font-size: 18px;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .good { color: var(--good); }
+        .bad { color: var(--bad); }
+        .warn { color: var(--warn); }
+
+        .history-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .history-card {
+            padding: 16px;
+            border-radius: 18px;
+            border: 1px solid var(--line);
+            background: rgba(7,16,24,0.72);
+        }
+
+        .history-meta {
+            margin-top: 8px;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .ghost-btn {
+            margin-top: 12px;
+            min-width: 0;
+            padding: 10px 12px;
+            border-radius: 12px;
+            background: rgba(84,199,255,0.08);
+            color: var(--accent);
+            border: 1px solid rgba(84,199,255,0.22);
+            font-size: 13px;
+        }
+
+        .table-box {
+            overflow: auto;
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            background: rgba(7,16,24,0.72);
+            margin-bottom: 18px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 1450px;
+        }
+
+        th, td {
+            padding: 12px 14px;
+            border-bottom: 1px solid rgba(32,56,77,0.7);
+            text-align: left;
+            font-size: 13px;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            background: #112031;
+            color: var(--muted);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+        }
+
+        .empty {
+            padding: 28px;
+            color: var(--muted);
+        }
+
+        @media (max-width: 1200px) {
+            .hero, .controls-grid, .cards, .history-grid {
+                grid-template-columns: 1fr;
+            }
+            .wide { grid-column: auto; }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="hero">
+            <div class="card">
+                <div class="eyebrow">Gaussian Crypto Scanner</div>
+                <h1>Escáner web para comparar v6.1 real de TV vs v6.2 en cripto</h1>
+                <div class="sub">
+                    Esta versión está enfocada en <strong>cripto</strong> y compara las dos ramas que importan:
+                    <strong>Gaussian v6.1 TV</strong> y <strong>Gaussian v6.2</strong>. Puedes escanear la
+                    watchlist <strong>clean</strong>, la <strong>broad</strong>, el <strong>top 30</strong> o una lista custom,
+                    y ver por símbolo qué versión gana en <strong>winrate, PF, net profit y drawdown</strong>.
+                </div>
+            </div>
+            <div class="card mini-grid">
+                <div class="mini">
+                    <div class="k">Clean</div>
+                    <div class="v">{{ universe_counts.clean }}</div>
+                </div>
+                <div class="mini">
+                    <div class="k">Broad</div>
+                    <div class="v">{{ universe_counts.broad }}</div>
+                </div>
+                <div class="mini">
+                    <div class="k">Top 30</div>
+                    <div class="v">{{ universe_counts.top30 }}</div>
+                </div>
+                <div class="mini">
+                    <div class="k">Temporalidades</div>
+                    <div class="v">{{ timeframes|length }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel controls">
+            <div class="controls-grid">
+                <div class="field">
+                    <label>Universo</label>
+                    <select id="universeName">
+                        <option value="clean">Clean</option>
+                        <option value="broad">Broad</option>
+                        <option value="top30">Top 30</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Versiones</label>
+                    <div class="checks" id="versionChecks">
+                        <label><input type="checkbox" value="v6.1" checked> v6.1 TV</label>
+                        <label><input type="checkbox" value="v6.2" checked> v6.2</label>
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Temporalidades</label>
+                    <div class="checks" id="tfChecks">
+                        {% for tf in timeframes %}
+                        <label><input type="checkbox" value="{{ tf }}" {% if tf in ["15m", "1h"] %}checked{% endif %}> {{ tf }}</label>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Top por tabla</label>
+                    <input type="number" id="topN" value="15" min="5" max="60">
+                </div>
+                <div class="field">
+                    <label>Mínimo trades</label>
+                    <input type="number" id="minTrades" value="20" min="1" max="100">
+                </div>
+                <div class="field">
+                    <label>Hilos</label>
+                    <input type="number" id="maxWorkers" value="8" min="1" max="20">
+                </div>
+                <div class="field">
+                    <button id="runBtn">Escanear cripto</button>
+                </div>
+                <div class="field wide">
+                    <label>Símbolos custom (opcional)</label>
+                    <input type="text" id="customSymbols" placeholder="BTCUSDT,ETHUSDT,SOLUSDT">
+                </div>
+            </div>
+            <div class="status" id="status">Listo para escanear.</div>
+        </div>
+
+        <div class="section">
+            <div class="section-head">
+                <h2>Mejores cartas</h2>
+                <div class="pill" id="summaryPill">Sin datos</div>
+            </div>
+            <div class="cards" id="topCards">
+                <div class="empty panel">Todavía no hay resultados. Lanza un escaneo.</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-head">
+                <h2>Historial de escaneos</h2>
+                <div class="pill" id="historyPill">Sin historial</div>
+            </div>
+            <div class="history-grid" id="historyGrid">
+                <div class="empty panel">Todavía no hay escaneos guardados.</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-head">
+                <h2>Comparación por símbolo</h2>
+                <div class="pill">v6.1 TV vs v6.2 en la misma fila</div>
+            </div>
+            <div id="tables">
+                <div class="empty panel">Todavía no hay resultados.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const runBtn = document.getElementById("runBtn");
+        const statusEl = document.getElementById("status");
+        const summaryPill = document.getElementById("summaryPill");
+        const topCards = document.getElementById("topCards");
+        const historyGrid = document.getElementById("historyGrid");
+        const historyPill = document.getElementById("historyPill");
+        const tables = document.getElementById("tables");
+
+        function fmt(num, digits = 2) {
+            return Number(num || 0).toFixed(digits);
+        }
+
+        function pctClass(v, inverse = false) {
+            const n = Number(v || 0);
+            if (inverse) return n <= 0 ? "good" : n >= 15 ? "bad" : "warn";
+            return n > 0 ? "good" : n < 0 ? "bad" : "";
+        }
+
+        function selectedValues(containerId) {
+            return Array.from(document.querySelectorAll(`#${containerId} input:checked`)).map(x => x.value);
+        }
+
+        function renderTopCards(data) {
+            const rows = data.top_v62 || [];
+            if (!rows.length) {
+                topCards.innerHTML = '<div class="empty panel">No hubo resultados válidos.</div>';
+                return;
+            }
+            const cards = rows.slice(0, 4).map((row, idx) => `
+                <div class="rank-card">
+                    <div class="pill">#${idx + 1} · v6.2 · ${row.timeframe}</div>
+                    <h3>${row.symbol}</h3>
+                    <div class="metric"><span>Segmento</span><strong>${row.segment}</strong></div>
+                    <div class="metric"><span>Winrate</span><strong class="${pctClass(row.win_rate)}">${fmt(row.win_rate)}%</strong></div>
+                    <div class="metric"><span>Profit neto</span><strong class="${pctClass(row.net_profit_pct)}">${fmt(row.net_profit_pct)}%</strong></div>
+                    <div class="metric"><span>Profit factor</span><strong>${fmt(row.profit_factor)}</strong></div>
+                    <div class="metric"><span>Drawdown</span><strong class="${pctClass(row.max_drawdown_pct, true)}">${fmt(row.max_drawdown_pct)}%</strong></div>
+                    <div class="metric"><span>Score</span><strong>${fmt(row.quality_score)}</strong></div>
+                </div>
+            `);
+            topCards.innerHTML = cards.join("");
+        }
+
+        function renderTable(title, rows) {
+            if (!rows.length) {
+                return `<div class="table-box"><div class="empty">${title}: sin resultados válidos.</div></div>`;
+            }
+            return `
+                <div class="table-box">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th colspan="16">${title}</th>
+                            </tr>
+                            <tr>
+                                <th>#</th>
+                                <th>Símbolo</th>
+                                <th>Segmento</th>
+                                <th>Priority</th>
+                                <th>v6.1 TV Trades</th>
+                                <th>v6.1 TV WR</th>
+                                <th>v6.1 TV PF</th>
+                                <th>v6.1 TV Net</th>
+                                <th>v6.2 Trades</th>
+                                <th>v6.2 WR</th>
+                                <th>v6.2 PF</th>
+                                <th>v6.2 Net</th>
+                                <th>Δ WR</th>
+                                <th>Δ PF</th>
+                                <th>Δ Net</th>
+                                <th>Ganador</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows.map((row, idx) => {
+                                const a = row.v6_1 || {};
+                                const b = row.v6_2 || {};
+                                const winner = Number(b.quality_score || 0) > Number(a.quality_score || 0) ? 'v6.2' :
+                                               Number(b.quality_score || 0) < Number(a.quality_score || 0) ? 'v6.1 TV' : 'empate';
+                                return `
+                                <tr>
+                                    <td>${idx + 1}</td>
+                                    <td><strong>${row.symbol}</strong></td>
+                                    <td>${row.segment}</td>
+                                    <td>${fmt(row.priority_score)}</td>
+                                    <td>${a.total_trades ?? '-'}</td>
+                                    <td class="${pctClass(a.win_rate)}">${a.win_rate != null ? fmt(a.win_rate) + '%' : '-'}</td>
+                                    <td>${a.profit_factor != null ? fmt(a.profit_factor) : '-'}</td>
+                                    <td class="${pctClass(a.net_profit_pct)}">${a.net_profit_pct != null ? fmt(a.net_profit_pct) + '%' : '-'}</td>
+                                    <td>${b.total_trades ?? '-'}</td>
+                                    <td class="${pctClass(b.win_rate)}">${b.win_rate != null ? fmt(b.win_rate) + '%' : '-'}</td>
+                                    <td>${b.profit_factor != null ? fmt(b.profit_factor) : '-'}</td>
+                                    <td class="${pctClass(b.net_profit_pct)}">${b.net_profit_pct != null ? fmt(b.net_profit_pct) + '%' : '-'}</td>
+                                    <td class="${pctClass(row.delta_win_rate)}">${fmt(row.delta_win_rate)}%</td>
+                                    <td class="${pctClass(row.delta_profit_factor)}">${fmt(row.delta_profit_factor)}</td>
+                                    <td class="${pctClass(row.delta_net_profit_pct)}">${fmt(row.delta_net_profit_pct)}%</td>
+                                    <td><strong>${winner}</strong></td>
+                                </tr>`;
+                            }).join("")}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderComparison(data) {
+            const parts = [];
+            Object.entries(data.comparison || {}).forEach(([tf, rows]) => {
+                parts.push(`<div class="section-head"><h2>${tf}</h2><div class="pill">Comparación por símbolo</div></div>`);
+                parts.push(renderTable(`${tf} · Universo ${data.summary.universe_name}`, rows));
+            });
+            tables.innerHTML = parts.length ? parts.join("") : '<div class="empty panel">Sin resultados.</div>';
+        }
+
+        function renderHistory(history) {
+            if (!history.length) {
+                historyPill.textContent = "Sin historial";
+                historyGrid.innerHTML = '<div class="empty panel">Todavía no hay escaneos guardados.</div>';
+                return;
+            }
+            historyPill.textContent = `${history.length} escaneos guardados`;
+            historyGrid.innerHTML = history.map(item => `
+                <div class="history-card">
+                    <div class="pill">Scan #${item.id}</div>
+                    <h3>${new Date(item.created_at).toLocaleString()}</h3>
+                    <div class="history-meta">
+                        Universo: ${item.universe_name}<br>
+                        Versiones: ${(item.versions || []).join(", ")}<br>
+                        Símbolos: ${item.symbols_count}<br>
+                        TF: ${(item.timeframes || []).join(", ")}<br>
+                        WR promedio: <span class="${pctClass(item.avg_winrate)}">${fmt(item.avg_winrate)}%</span><br>
+                        Profit promedio: <span class="${pctClass(item.avg_profit)}">${fmt(item.avg_profit)}%</span><br>
+                        DD promedio: <span class="${pctClass(item.avg_drawdown, true)}">${fmt(item.avg_drawdown)}%</span><br>
+                        Tests: ${item.tested} · Fallidos: ${item.failed} · ${fmt(item.scan_seconds)}s
+                    </div>
+                    <button class="ghost-btn" onclick="loadHistoryScan(${item.id})">Abrir</button>
+                </div>
+            `).join("");
+        }
+
+        function applyScanResult(data, loadedFromHistory = false) {
+            const s = data.summary;
+            summaryPill.textContent = `Scan #${s.scan_id || "?"} · ${s.symbols_count} símbolos · ${s.tested} tests · ${s.scan_seconds}s`;
+            statusEl.textContent = `${loadedFromHistory ? "Cargado desde historial" : "Escaneo terminado"} · ${s.universe_name} · v6.1 TV WR ${fmt(s.v6_1.avg_winrate)}% / PF ${fmt(s.v6_1.avg_profit_factor)} · v6.2 WR ${fmt(s.v6_2.avg_winrate)}% / PF ${fmt(s.v6_2.avg_profit_factor)}`;
+            renderTopCards(data);
+            renderComparison(data);
+        }
+
+        async function refreshHistory() {
+            try {
+                const resp = await fetch('/api/history?limit=12');
+                const data = await resp.json();
+                renderHistory(data.history || []);
+            } catch (err) {
+                historyPill.textContent = 'Error historial';
+                historyGrid.innerHTML = `<div class="empty panel">No pude cargar el historial: ${err.message}</div>`;
+            }
+        }
+
+        async function loadHistoryScan(scanId) {
+            statusEl.textContent = `Cargando scan #${scanId}...`;
+            try {
+                const resp = await fetch(`/api/history/${scanId}`);
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'no encontrado');
+                if (!data.summary.scan_id) data.summary.scan_id = scanId;
+                applyScanResult(data, true);
+            } catch (err) {
+                statusEl.textContent = `Error cargando historial: ${err.message}`;
+            }
+        }
+
+        window.loadHistoryScan = loadHistoryScan;
+
+        async function runScan() {
+            const versions = selectedValues('versionChecks');
+            const timeframes = selectedValues('tfChecks');
+            if (!versions.length || !timeframes.length) {
+                statusEl.textContent = 'Selecciona al menos una versión y una temporalidad.';
+                return;
+            }
+
+            runBtn.disabled = true;
+            statusEl.textContent = 'Escaneando universo cripto. Esto puede tardar varios minutos.';
+            summaryPill.textContent = 'Procesando...';
+
+            try {
+                const resp = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        universe_name: document.getElementById('universeName').value,
+                        versions,
+                        timeframes,
+                        top_n: Number(document.getElementById('topN').value || 15),
+                        min_trades: Number(document.getElementById('minTrades').value || 20),
+                        max_workers: Number(document.getElementById('maxWorkers').value || 8),
+                        custom_symbols: document.getElementById('customSymbols').value || '',
+                        provider: 'bitget',
+                    }),
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'error desconocido');
+                applyScanResult(data, false);
+                await refreshHistory();
+            } catch (err) {
+                statusEl.textContent = `Error: ${err.message}`;
+                summaryPill.textContent = 'Falló el escaneo';
+            } finally {
+                runBtn.disabled = false;
+            }
+        }
+
+        runBtn.addEventListener('click', runScan);
+        refreshHistory();
+    </script>
+</body>
+</html>

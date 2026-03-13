@@ -1,0 +1,13 @@
+{
+  "gaussian_v61": {
+    "use_smc_filter": [true, false],
+    "adx_threshold": [18, 22, 25],
+    "use_kill_zones": [false, true],
+    "use_volume_absorption": [true, false]
+  },
+  "gaussian_legacy": {
+    "length": [20, 30, 40],
+    "distance": [1.0, 1.5, 2.0],
+    "mode": ["AVG", "MEDIAN"]
+  }
+}

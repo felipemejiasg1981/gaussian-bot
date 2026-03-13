@@ -1,0 +1,20 @@
+{
+  "gaussian_legacy": {
+    "length": [20, 30],
+    "distance": [1.0, 1.5],
+    "mode": ["AVG", "MEDIAN"]
+  },
+  "gaussian_v61": {
+    "use_adaptive_sigma": [false, true],
+    "use_adx_filter": [false, true],
+    "use_dmi_confirm": [false, true],
+    "use_smc_filter": [false],
+    "use_volume_absorption": [false],
+    "use_multi_osc": [false],
+    "use_kill_zones": [false],
+    "use_htf_alignment": [false, true],
+    "use_trend_slope_filter": [false, true],
+    "use_band_width_filter": [false, true],
+    "use_divergence": [false]
+  }
+}

@@ -1,0 +1,748 @@
+//@version=6
+indicator("Gaussian Trend IA Pro v6 EXTREME", overlay=true, max_labels_count=500, max_lines_count=500)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🔧 INPUTS - GAUSSIAN KERNEL
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+int    len       = input.int(20, "Length", minval=5, inline="g1", group="🌊 GAUSSIAN KERNEL")
+string mode      = input.string("AVG", "Mode", options=["AVG","MEDIAN","TRIMMED"], inline="g1", group="🌊 GAUSSIAN KERNEL")
+float  distance  = input.float(1.0, "Dist", step=0.1, inline="g1", group="🌊 GAUSSIAN KERNEL")
+color  up        = input.color(color.rgb(40,218,150), "Up", inline="g2", group="🌊 GAUSSIAN KERNEL")
+color  dn        = input.color(#287bda, "Down", inline="g2", group="🌊 GAUSSIAN KERNEL")
+bool  useDashed  = input.bool(false, "Línea discontinua", group="🌊 GAUSSIAN KERNEL")
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🧠 V6 EXTREME - SIGMA DINÁMICO CUÁNTICO
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+bool   useAdaptiveSigma = input.bool(true, "Sigma Dinámico Cuántico", group="🧠 V6 EXTREME ENGINE", tooltip="Ajusta el ancho de la campana Gaussiana según volatilidad ATR normalizada")
+float  sigmaBase        = input.float(10.0, "Sigma Base", minval=3.0, maxval=20.0, step=0.5, group="🧠 V6 EXTREME ENGINE")
+float  sigmaMin         = input.float(5.0, "Sigma Mín", minval=2.0, maxval=10.0, step=0.5, group="🧠 V6 EXTREME ENGINE")
+float  sigmaMax         = input.float(18.0, "Sigma Máx", minval=10.0, maxval=30.0, step=1.0, group="🧠 V6 EXTREME ENGINE")
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 📊 V6 EXTREME - FILTRO ADX INSTITUCIONAL
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+bool   useADXFilter   = input.bool(true, "Filtro ADX Institucional", group="📊 ADX TREND STRENGTH", tooltip="Bloquea señales cuando ADX < umbral (mercado sin tendencia)")
+int    adxLen         = input.int(14, "ADX Length", minval=7, maxval=50, group="📊 ADX TREND STRENGTH")
+float  adxThreshold   = input.float(25.0, "ADX Umbral Mínimo", minval=15.0, maxval=40.0, step=1.0, group="📊 ADX TREND STRENGTH")
+bool   useDMIConfirm  = input.bool(true, "Confirmar con DI+/DI-", group="📊 ADX TREND STRENGTH", tooltip="Long solo si DI+ > DI-, Short solo si DI- > DI+")
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🏗️ V6 EXTREME - SMART MONEY STRUCTURE (BOS/CHoCH)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+bool   useSMCFilter     = input.bool(true, "Smart Money Structure", group="🏗️ MARKET STRUCTURE", tooltip="Filtra señales según estructura HH/HL (alcista) o LH/LL (bajista)")
+int    structureLookback = input.int(50, "Lookback Estructura", minval=20, maxval=200, group="🏗️ MARKET STRUCTURE")
+bool   showBOS          = input.bool(true, "Mostrar BOS/CHoCH", group="🏗️ MARKET STRUCTURE")
+int    swingStrength    = input.int(5, "Swing Strength", minval=2, maxval=15, group="🏗️ MARKET STRUCTURE")
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 📈 V6 EXTREME - VOLUME DELTA & ABSORCIÓN
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+bool   useVolumeAbsorption = input.bool(true, "Detección de Absorción", group="📈 VOLUME DELTA", tooltip="Detecta absorción institucional (volumen vs movimiento de precio)")
+float  absorptionThreshold = input.float(1.5, "Umbral Absorción", minval=1.0, maxval=3.0, step=0.1, group="📈 VOLUME DELTA")
+bool   showAbsorptionMarks = input.bool(true, "Mostrar Marcas Absorción", group="📈 VOLUME DELTA")
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🎯 V6 EXTREME - MULTI-OSCILLATOR CONFLUENCE
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+bool   useMultiOsc      = input.bool(true, "Multi-Oscillator Confluence", group="🎯 OSCILLATOR CONFLUENCE", tooltip="RSI + Stochastic + CCI deben alinearse")
+int    rsiLen           = input.int(14, "RSI Length", minval=5, maxval=30, group="🎯 OSCILLATOR CONFLUENCE")
+int    stochLen         = input.int(14, "Stochastic Length", minval=5, maxval=30, group="🎯 OSCILLATOR CONFLUENCE")
+int    cciLen           = input.int(20, "CCI Length", minval=10, maxval=50, group="🎯 OSCILLATOR CONFLUENCE")
+float  rsiOversold      = input.float(35, "RSI Oversold", minval=20, maxval=45, group="🎯 OSCILLATOR CONFLUENCE")
+float  rsiOverbought    = input.float(65, "RSI Overbought", minval=55, maxval=80, group="🎯 OSCILLATOR CONFLUENCE")
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ⏰ V6 EXTREME - KILL ZONES MEJORADAS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+bool   useKillZones    = input.bool(true, "Kill Zones Institucionales", group="⏰ KILL ZONES", tooltip="Solo opera en las horas de mayor volumen institucional")
+bool   kzLondonOpen    = input.bool(true, "London Open (07-10 UTC)", group="⏰ KILL ZONES")
+bool   kzNYOpen        = input.bool(true, "NY Open (12-15 UTC)", group="⏰ KILL ZONES")
+bool   kzLondonClose   = input.bool(true, "London Close (15-17 UTC)", group="⏰ KILL ZONES")
+bool   kzAsiaSession   = input.bool(false, "Asia Session (00-03 UTC)", group="⏰ KILL ZONES")
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🔮 V6 EXTREME - DIVERGENCIA AVANZADA
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+bool   useDivergence    = input.bool(true, "Divergencia RSI Avanzada", group="🔮 DIVERGENCE ENGINE", tooltip="Detecta divergencias regulares y ocultas con confirmación de pivots")
+int    divLookback      = input.int(30, "Lookback Divergencia", minval=10, maxval=100, group="🔮 DIVERGENCE ENGINE")
+int    divPivotStrength = input.int(5, "Pivot Strength Div", minval=2, maxval=10, group="🔮 DIVERGENCE ENGINE")
+bool   showDivergence   = input.bool(true, "Mostrar Divergencias", group="🔮 DIVERGENCE ENGINE")
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🛡️ GESTIÓN DE RIESGO V6
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+int   atrLen     = input.int(14, "ATR", inline="t1", group="💸 TARGETS & STOP LOSS")
+float maxSLPct   = input.float(6.0, "SL Cap %", step=0.5, minval=1.0, inline="t1", group="💸 TARGETS & STOP LOSS") / 100.0
+float slBuf      = input.float(0.20, "SL Buf %", step=0.05, minval=0.05, maxval=1.0, inline="t1", group="💸 TARGETS & STOP LOSS") / 100.0
+int   lineExt    = input.int(25, "Ext Bars", minval=5, maxval=100, inline="t2", group="💸 TARGETS & STOP LOSS")
+bool  showTgts   = input.bool(true, "Targets", inline="t2", group="💸 TARGETS & STOP LOSS")
+bool  showPanel  = input.bool(true, "Panel", inline="t2", group="💸 TARGETS & STOP LOSS")
+
+// TPs internos (3 TPs fijos + Runner 20%)
+float tp1R = 1.0
+float tp2R = 2.0
+float tp3R = 3.0
+float tp4R = 4.236
+
+float feePct = input.float(0.15, "BE Fee % (open+close)", step=0.01, minval=0.05, maxval=1.0, group="🛡️ BREAK EVEN (Risk Free)") / 100.0
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 📡 WEBHOOKS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+bool useWebhook = input.bool(false, "Webhook JSON", group="📡 WEBHOOKS AUTO-TRADING")
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// COLORES
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+color c_slLine  = color.new(#FF0000, 0)
+color c_tp1Line = color.new(#00FF00, 0)
+color c_tpLine  = color.new(#00FF00, 0)
+color c_bull    = color.new(#00E676, 0)
+color c_bear    = color.new(#FF1744, 0)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SERIES BASE (precálculos)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+float atrSL      = ta.atr(atrLen)
+float atr200     = ta.atr(200)
+float atrStable  = nz(ta.sma(atr200, 200), nz(atrSL, close * 0.01)) * 0.8
+float volSma20   = ta.sma(volume, 20)
+int   tfSec      = timeframe.in_seconds()
+int   tfMs       = tfSec * 1000
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🧠 SIGMA DINÁMICO CUÁNTICO (NUEVO V6)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+float atrNorm = ta.atr(14) / ta.sma(ta.atr(14), 100)
+float dynamicSigma = useAdaptiveSigma ? 
+     math.max(sigmaMin, math.min(sigmaMax, sigmaBase * (1.0 / math.max(0.5, atrNorm)))) : 
+     sigmaBase
+
+// Pre-compute gaussian weights con SIGMA DINÁMICO
+var array<float> gaussCache = array.new_float(0)
+var array<int>   gaussIndex = array.new_int(21, 0)
+
+// Función para calcular pesos gaussianos dinámicamente
+f_gaussWeight(int i, int length, float sigma) =>
+    math.exp(-0.5 * math.pow((i - length / 2.0) / sigma, 2.0)) / math.sqrt(sigma * 2.0 * math.pi)
+
+// Convolución gaussiana con sigma dinámico
+gaussian_filter_dynamic(series float src, int step, float sigma) =>
+    int n = len + step
+    float total = 0.0
+    float s = 0.0
+    for i = 0 to n - 1
+        float wt = f_gaussWeight(i, n, sigma)
+        s += src[i] * wt
+        total += wt
+    total > 0 ? s / total : src
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 📊 ADX + DMI INSTITUCIONAL (NUEVO V6)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+f_calcADX(int length) =>
+    float trueRange = math.max(high - low, math.max(math.abs(high - close[1]), math.abs(low - close[1])))
+    float dmPlus = math.max(high - high[1], 0)
+    float dmMinus = math.max(low[1] - low, 0)
+    
+    if dmPlus > dmMinus
+        dmMinus := 0
+    else
+        dmPlus := 0
+    
+    float smoothTR = ta.rma(trueRange, length)
+    float smoothDMPlus = ta.rma(dmPlus, length)
+    float smoothDMMinus = ta.rma(dmMinus, length)
+    
+    float diPlus = smoothTR > 0 ? (smoothDMPlus / smoothTR) * 100 : 0
+    float diMinus = smoothTR > 0 ? (smoothDMMinus / smoothTR) * 100 : 0
+    
+    float dx = math.abs(diPlus - diMinus) / (diPlus + diMinus) * 100
+    float adx = ta.rma(dx, length)
+    
+    [adx, diPlus, diMinus]
+
+[adxValue, diPlus, diMinus] = f_calcADX(adxLen)
+
+bool adxOK = not useADXFilter or (adxValue >= adxThreshold)
+bool dmiLongOK = not useDMIConfirm or (diPlus > diMinus)
+bool dmiShortOK = not useDMIConfirm or (diMinus > diPlus)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🏗️ SMART MONEY STRUCTURE (BOS/CHoCH) (NUEVO V6)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Detectar swing highs y lows
+float swingHigh = ta.pivothigh(high, swingStrength, swingStrength)
+float swingLow = ta.pivotlow(low, swingStrength, swingStrength)
+
+var float lastSwingHigh = na
+var float lastSwingLow = na
+var float prevSwingHigh = na
+var float prevSwingLow = na
+var int structureBias = 0 // 1 = Bullish, -1 = Bearish
+
+if not na(swingHigh)
+    prevSwingHigh := lastSwingHigh
+    lastSwingHigh := swingHigh
+    
+if not na(swingLow)
+    prevSwingLow := lastSwingLow
+    lastSwingLow := swingLow
+
+// Detectar estructura
+bool higherHigh = not na(lastSwingHigh) and not na(prevSwingHigh) and lastSwingHigh > prevSwingHigh
+bool higherLow = not na(lastSwingLow) and not na(prevSwingLow) and lastSwingLow > prevSwingLow
+bool lowerHigh = not na(lastSwingHigh) and not na(prevSwingHigh) and lastSwingHigh < prevSwingHigh
+bool lowerLow = not na(lastSwingLow) and not na(prevSwingLow) and lastSwingLow < prevSwingLow
+
+// Eventos de nuevo pivot (para evitar spam visual)
+bool newSwingHigh = not na(swingHigh)
+bool newSwingLow = not na(swingLow)
+
+// Break of Structure (BOS)
+bool bullishBOS = newSwingHigh and structureBias != -1 and higherHigh
+bool bearishBOS = newSwingLow and structureBias != 1 and lowerLow
+
+// Change of Character (CHoCH)
+bool bullishCHoCH = newSwingHigh and structureBias == -1 and higherHigh
+bool bearishCHoCH = newSwingLow and structureBias == 1 and lowerLow
+
+if bullishBOS or bullishCHoCH
+    structureBias := 1
+if bearishBOS or bearishCHoCH
+    structureBias := -1
+
+bool smcLongOK = not useSMCFilter or (structureBias >= 0)
+bool smcShortOK = not useSMCFilter or (structureBias <= 0)
+
+// Visualización BOS/CHoCH (Líneas Estructurales)
+if showBOS and bullishBOS
+    line.new(bar_index - swingStrength, lastSwingHigh, bar_index, lastSwingHigh, color=color.new(#00E676, 20), style=line.style_dotted, width=1)
+    label.new(bar_index - swingStrength, lastSwingHigh, "BOS↑", color=color.new(color.white, 100), textcolor=color.new(#00E676, 0), style=label.style_label_down, size=size.tiny)
+
+if showBOS and bearishBOS
+    line.new(bar_index - swingStrength, lastSwingLow, bar_index, lastSwingLow, color=color.new(#FF1744, 20), style=line.style_dotted, width=1)
+    label.new(bar_index - swingStrength, lastSwingLow, "BOS↓", color=color.new(color.white, 100), textcolor=color.new(#FF1744, 0), style=label.style_label_up, size=size.tiny)
+
+if showBOS and bullishCHoCH
+    line.new(bar_index - swingStrength, lastSwingHigh, bar_index, lastSwingHigh, color=color.new(#00E676, 20), style=line.style_dashed, width=1)
+    label.new(bar_index - swingStrength, lastSwingHigh, "CHoCH↑", color=color.new(color.white, 100), textcolor=color.new(#00E676, 0), style=label.style_label_down, size=size.tiny)
+
+if showBOS and bearishCHoCH
+    line.new(bar_index - swingStrength, lastSwingLow, bar_index, lastSwingLow, color=color.new(#FF1744, 20), style=line.style_dashed, width=1)
+    label.new(bar_index - swingStrength, lastSwingLow, "CHoCH↓", color=color.new(color.white, 100), textcolor=color.new(#FF1744, 0), style=label.style_label_up, size=size.tiny)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 📈 VOLUME DELTA & ABSORCIÓN (NUEVO V6)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+float candleRange = high - low
+float bodyRange = math.abs(close - open)
+float upperWick = high - math.max(close, open)
+float lowerWick = math.min(close, open) - low
+
+// Delta aproximado (close position in range)
+float deltaApprox = candleRange > 0 ? ((close - low) / candleRange - 0.5) * 2 * volume : 0
+
+// Detección de absorción
+float volRatio = volSma20 > 0 ? volume / volSma20 : 1.0
+bool bullishAbsorption = useVolumeAbsorption and 
+     (lowerWick > bodyRange * 1.5) and 
+     (close > open) and 
+     (volRatio > absorptionThreshold) and 
+     (low == ta.lowest(low, 10))
+
+bool bearishAbsorption = useVolumeAbsorption and 
+     (upperWick > bodyRange * 1.5) and 
+     (close < open) and 
+     (volRatio > absorptionThreshold) and 
+     (high == ta.highest(high, 10))
+
+if showAbsorptionMarks and bullishAbsorption
+    label.new(bar_index, low, "🐋 ABS", color=color.new(#00BCD4, 10), textcolor=color.white, style=label.style_label_up, size=size.tiny)
+
+if showAbsorptionMarks and bearishAbsorption
+    label.new(bar_index, high, "🐋 ABS", color=color.new(#FF5722, 10), textcolor=color.white, style=label.style_label_down, size=size.tiny)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🎯 MULTI-OSCILLATOR CONFLUENCE (NUEVO V6)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+float rsiVal = ta.rsi(close, rsiLen)
+float stochK = ta.stoch(close, high, low, stochLen)
+float cciVal = ta.cci(close, cciLen)
+
+bool rsiLongOK = rsiVal < rsiOversold or (rsiVal > 40 and rsiVal < 60)
+bool rsiShortOK = rsiVal > rsiOverbought or (rsiVal > 40 and rsiVal < 60)
+
+bool stochLongOK = stochK < 30 or (stochK > 20 and stochK < 80)
+bool stochShortOK = stochK > 70 or (stochK > 20 and stochK < 80)
+
+bool cciLongOK = cciVal < -100 or (cciVal > -50 and cciVal < 50)
+bool cciShortOK = cciVal > 100 or (cciVal > -50 and cciVal < 50)
+
+int oscConfluenceLong = (rsiLongOK ? 1 : 0) + (stochLongOK ? 1 : 0) + (cciLongOK ? 1 : 0)
+int oscConfluenceShort = (rsiShortOK ? 1 : 0) + (stochShortOK ? 1 : 0) + (cciShortOK ? 1 : 0)
+
+bool multiOscLongOK = not useMultiOsc or (oscConfluenceLong >= 2)
+bool multiOscShortOK = not useMultiOsc or (oscConfluenceShort >= 2)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ⏰ KILL ZONES MEJORADAS (NUEVO V6)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+int utcH = hour(time, "UTC")
+
+bool inLondonOpen = utcH >= 7 and utcH < 10
+bool inNYOpen = utcH >= 12 and utcH < 15
+bool inLondonClose = utcH >= 15 and utcH < 17
+bool inAsiaSession = utcH >= 0 and utcH < 3
+
+bool inKillZone = not useKillZones or 
+     (kzLondonOpen and inLondonOpen) or 
+     (kzNYOpen and inNYOpen) or 
+     (kzLondonClose and inLondonClose) or 
+     (kzAsiaSession and inAsiaSession)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🔮 DIVERGENCIA AVANZADA CON PIVOTS (NUEVO V6)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+float rsiPivotHigh = ta.pivothigh(rsiVal, divPivotStrength, divPivotStrength)
+float rsiPivotLow = ta.pivotlow(rsiVal, divPivotStrength, divPivotStrength)
+float pricePivotHigh = ta.pivothigh(high, divPivotStrength, divPivotStrength)
+float pricePivotLow = ta.pivotlow(low, divPivotStrength, divPivotStrength)
+
+var float lastRsiHigh = na
+var float lastRsiLow = na
+var float lastPriceHigh = na
+var float lastPriceLow = na
+
+if not na(rsiPivotHigh)
+    lastRsiHigh := rsiPivotHigh
+if not na(rsiPivotLow)
+    lastRsiLow := rsiPivotLow
+if not na(pricePivotHigh)
+    lastPriceHigh := pricePivotHigh
+if not na(pricePivotLow)
+    lastPriceLow := pricePivotLow
+
+// Divergencia bajista: precio hace HH, RSI hace LH
+bool bearishDivergence = useDivergence and 
+     not na(pricePivotHigh) and 
+     pricePivotHigh > lastPriceHigh[divPivotStrength * 2] and 
+     rsiVal < lastRsiHigh[divPivotStrength * 2]
+
+// Divergencia alcista: precio hace LL, RSI hace HL
+bool bullishDivergence = useDivergence and 
+     not na(pricePivotLow) and 
+     pricePivotLow < lastPriceLow[divPivotStrength * 2] and 
+     rsiVal > lastRsiLow[divPivotStrength * 2]
+
+if showDivergence and bullishDivergence
+    label.new(bar_index - divPivotStrength, low[divPivotStrength], "DIV+", color=color.new(#00E676, 10), textcolor=color.white, style=label.style_label_up, size=size.tiny)
+
+if showDivergence and bearishDivergence
+    label.new(bar_index - divPivotStrength, high[divPivotStrength], "DIV-", color=color.new(#FF1744, 10), textcolor=color.white, style=label.style_label_down, size=size.tiny)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🌊 GAUSSIAN MULTI-TREND CON SIGMA DINÁMICO
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+multi_trend_v6(series float src, int period, float sigma) =>
+    array<float> g = array.new_float(0)
+    float vol = ta.sma(high - low, 100)
+
+    for step = 0 to 20
+        array.push(g, gaussian_filter_dynamic(src, step, sigma))
+
+    float sc = 0.0
+    float first = array.size(g) > 0 ? array.get(g, 0) : src
+    int gs = array.size(g)
+    for i = 0 to gs - 1
+        if array.get(g, i) > first
+            sc += 0.05
+
+    color clr = sc > 0.5 ? color.from_gradient(sc, 0.5, 1.0, na, dn) : color.from_gradient(sc, 0.0, 0.5, up, na)
+
+    float val = na
+    if mode == "AVG"
+        val := array.avg(g)
+    else if mode == "MEDIAN"
+        val := array.median(g)
+    else if mode == "TRIMMED"
+        array<float> g_sort = array.copy(g)
+        array.sort(g_sort)
+        if array.size(g_sort) > 2
+            array.remove(g_sort, 0)
+            array.remove(g_sort, array.size(g_sort) - 1)
+        val := array.avg(g_sort)
+
+    float lb = val - vol * distance
+    float ub = val + vol * distance
+
+    bool cross_up = ta.crossover(src, ub)
+    bool cross_dn = ta.crossunder(src, lb)
+    
+    int  cross_dir = cross_up ? 1 : (cross_dn ? -1 : 0)
+    int  last_dir  = ta.valuewhen(cross_dir != 0, cross_dir, 0)
+    bool tr = nz(last_dir, -1) == 1
+
+    float tlv = tr ? lb : ub
+    [sc, val, clr, tlv, tr, vol, lb, ub]
+
+[score, avg, clr, trend_line, trend, gVol, bandLow, bandHigh] = multi_trend_v6(close, len, dynamicSigma)
+
+// Cruces del trend line
+bool crossUpTL = ta.crossover(close, trend_line)
+bool crossDnTL = ta.crossunder(close, trend_line)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🔥 SEÑALES FINALES V6 EXTREME (ESTILO V3)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// En V3, la señal DEBE aparecer cuando la línea cambia de color (tendencia cambia)
+int trend_int = trend ? 1 : -1
+bool trend_changed_long = ta.change(trend_int) > 0
+bool trend_changed_short = ta.change(trend_int) < 0
+
+// Condiciones puras para el Score (sin importar si el usuario las marca como obligatorias o no)
+bool isADXStrong = adxValue >= adxThreshold
+bool isDMILong = diPlus > diMinus
+bool isDMIShort = diMinus > diPlus
+bool isSMCBull = structureBias >= 0
+bool isSMCBear = structureBias <= 0
+bool isMultiOscLong = oscConfluenceLong >= 2
+bool isMultiOscShort = oscConfluenceShort >= 2
+// Filtros combinados opcionales
+bool filterADX_L = not useADXFilter or isADXStrong
+bool filterADX_S = not useADXFilter or isADXStrong
+
+bool filterDMI_L = not useDMIConfirm or isDMILong
+bool filterDMI_S = not useDMIConfirm or isDMIShort
+
+bool filterSMC_L = not useSMCFilter or isSMCBull
+bool filterSMC_S = not useSMCFilter or isSMCBear
+
+bool filterOsc_L = not useMultiOsc or isMultiOscLong
+bool filterOsc_S = not useMultiOsc or isMultiOscShort
+
+bool filterKZ_L = not useKillZones or inKillZone
+bool filterKZ_S = not useKillZones or inKillZone
+
+// Señales iniciales (solo basadas en Gaussian Trend y filtros activos)
+bool long_signal = trend_changed_long and filterADX_L and filterDMI_L and filterSMC_L and filterOsc_L and filterKZ_L and barstate.isconfirmed
+bool short_signal = trend_changed_short and filterADX_S and filterDMI_S and filterSMC_S and filterOsc_S and filterKZ_S and barstate.isconfirmed
+
+// Bonus: absorción o divergencia aumenta probabilidad
+bool bonusLong = bullishAbsorption or bullishDivergence
+bool bonusShort = bearishAbsorption or bearishDivergence
+
+// Señales con bonus (alta probabilidad)
+bool long_signal_strong = long_signal and bonusLong
+bool short_signal_strong = short_signal and bonusShort
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 📊 CONFLUENCE SCORE V6 (1-10)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+int confScoreLong = 0
+if long_signal
+    confScoreLong += isADXStrong ? 2 : 0
+    confScoreLong += isSMCBull ? 2 : 0
+    confScoreLong += isMultiOscLong ? 2 : 0
+    confScoreLong += inKillZone ? 1 : 0
+    confScoreLong += bullishAbsorption ? 2 : 0
+    confScoreLong += bullishDivergence ? 1 : 0
+
+int confScoreShort = 0
+if short_signal
+    confScoreShort += isADXStrong ? 2 : 0
+    confScoreShort += isSMCBear ? 2 : 0
+    confScoreShort += isMultiOscShort ? 2 : 0
+    confScoreShort += inKillZone ? 1 : 0
+    confScoreShort += bearishAbsorption ? 2 : 0
+    confScoreShort += bearishDivergence ? 1 : 0
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🎨 VISUALIZACIÓN
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Gaussian lines
+plot(avg, color=clr, linewidth=1, title="Gaussian Avg")
+plot(trend_line, color=close > trend_line ? up : dn, linewidth=2, style=useDashed ? plot.style_circles : plot.style_linebr, title="Trend Line")
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 📊 ESTADÍSTICAS GLOBALES (WINRATE Y MÁXIMOS)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+var int totalTrades = 0
+var int winTrades = 0
+var int lossTrades = 0
+var float maxWinPct = 0.0
+var float maxLossPct = 0.0
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🛡️ TP / SL STATE Y VISUALIZACIÓN
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+var int tradeState = 0 // 1 = Long, -1 = Short, 0 = Flat
+var float entryPrice = na
+var float slLevel = na
+var float tp1Level = na
+var float tp2Level = na
+var float tp3Level = na
+
+var line lnEntry = na
+var line lnSl = na
+var line lnTp1 = na
+var label lblEntry = na
+var label lblSl = na
+var label lblTp1 = na
+
+if long_signal and tradeState == 0
+    tradeState := 1
+    entryPrice := close
+    float rawSl = trend_line 
+    slLevel := entryPrice * (1.0 - math.min(maxSLPct, math.abs(entryPrice - rawSl) / entryPrice + slBuf))
+    float risk = entryPrice - slLevel
+    tp1Level := entryPrice + risk * tp1R
+    tp2Level := entryPrice + risk * tp2R
+    tp3Level := entryPrice + risk * tp3R
+    
+    if showTgts
+        if not na(lnEntry)
+            line.delete(lnEntry)
+            line.delete(lnSl)
+            line.delete(lnTp1)
+            label.delete(lblEntry)
+            label.delete(lblSl)
+            label.delete(lblTp1)
+        
+        lnEntry := line.new(bar_index, entryPrice, bar_index + lineExt, entryPrice, color=color.new(#8b949e, 20), style=line.style_dashed)
+        lnSl := line.new(bar_index, slLevel, bar_index + lineExt, slLevel, color=color.new(#FF1744, 0), style=line.style_solid)
+        lnTp1 := line.new(bar_index, tp1Level, bar_index + lineExt, tp1Level, color=color.new(#00E676, 0), style=line.style_solid)
+        
+        lblEntry := label.new(bar_index + lineExt, entryPrice, "Long Entry:\\n" + str.tostring(entryPrice, "#.####"), color=color.new(color.black, 100), textcolor=color.new(#8b949e, 0), style=label.style_label_left, size=size.small)
+        lblSl := label.new(bar_index + lineExt, slLevel, "SL:\\n" + str.tostring(slLevel, "#.####"), color=color.new(color.black, 100), textcolor=color.new(#FF1744, 0), style=label.style_label_left, size=size.small)
+        lblTp1 := label.new(bar_index + lineExt, tp1Level, "TP1:\\n" + str.tostring(tp1Level, "#.####"), color=color.new(color.black, 100), textcolor=color.new(#00E676, 0), style=label.style_label_left, size=size.small)
+
+if short_signal and tradeState == 0
+    tradeState := -1
+    entryPrice := close
+    float rawSl = trend_line
+    slLevel := entryPrice * (1.0 + math.min(maxSLPct, math.abs(rawSl - entryPrice) / entryPrice + slBuf))
+    float risk = slLevel - entryPrice
+    tp1Level := entryPrice - risk * tp1R
+    tp2Level := entryPrice - risk * tp2R
+    tp3Level := entryPrice - risk * tp3R
+    
+    if showTgts
+        if not na(lnEntry)
+            line.delete(lnEntry)
+            line.delete(lnSl)
+            line.delete(lnTp1)
+            label.delete(lblEntry)
+            label.delete(lblSl)
+            label.delete(lblTp1)
+        
+        lnEntry := line.new(bar_index, entryPrice, bar_index + lineExt, entryPrice, color=color.new(#8b949e, 20), style=line.style_dashed)
+        lnSl := line.new(bar_index, slLevel, bar_index + lineExt, slLevel, color=color.new(#FF1744, 0), style=line.style_solid)
+        lnTp1 := line.new(bar_index, tp1Level, bar_index + lineExt, tp1Level, color=color.new(#00E676, 0), style=line.style_solid)
+        
+        lblEntry := label.new(bar_index + lineExt, entryPrice, "Short Entry:\\n" + str.tostring(entryPrice, "#.####"), color=color.new(color.black, 100), textcolor=color.new(#8b949e, 0), style=label.style_label_left, size=size.small)
+        lblSl := label.new(bar_index + lineExt, slLevel, "SL:\\n" + str.tostring(slLevel, "#.####"), color=color.new(color.black, 100), textcolor=color.new(#FF1744, 0), style=label.style_label_left, size=size.small)
+        lblTp1 := label.new(bar_index + lineExt, tp1Level, "TP1:\\n" + str.tostring(tp1Level, "#.####"), color=color.new(color.black, 100), textcolor=color.new(#00E676, 0), style=label.style_label_left, size=size.small)
+
+bool hitSlLong = tradeState == 1 and low <= slLevel
+bool hitTpLong = tradeState == 1 and high >= tp1Level
+bool hitSlShort = tradeState == -1 and high >= slLevel
+bool hitTpShort = tradeState == -1 and low <= tp1Level
+bool slTpTrigger = hitSlLong or hitTpLong or hitSlShort or hitTpShort
+
+if tradeState == 1
+    if hitTpLong
+        totalTrades += 1
+        winTrades += 1
+        maxWinPct := math.max(maxWinPct, ((tp1Level - entryPrice) / entryPrice) * 100)
+        tradeState := 2
+        slLevel := entryPrice
+        if showTgts and not na(lnSl)
+            line.set_y1(lnSl, slLevel)
+            line.set_y2(lnSl, slLevel)
+            label.set_y(lblSl, slLevel)
+            label.set_text(lblSl, "SL (BE):\\n" + str.tostring(slLevel, "#.####"))
+            
+    else if hitSlLong
+        totalTrades += 1
+        lossTrades += 1
+        maxLossPct := math.min(maxLossPct, ((slLevel - entryPrice) / entryPrice) * 100)
+        tradeState := 0
+        
+    if showTgts and not na(lnEntry) and tradeState != 0
+        line.set_x2(lnEntry, bar_index + 5)
+        line.set_x2(lnSl, bar_index + 5)
+        line.set_x2(lnTp1, bar_index + 5)
+        label.set_x(lblEntry, bar_index + 5)
+        label.set_x(lblSl, bar_index + 5)
+        label.set_x(lblTp1, bar_index + 5)
+
+if tradeState == 2
+    if high >= tp3Level
+        maxWinPct := math.max(maxWinPct, ((tp3Level - entryPrice) / entryPrice) * 100)
+        tradeState := 0
+    else if low <= slLevel
+        tradeState := 0
+        
+    if showTgts and not na(lnEntry) and tradeState != 0
+        line.set_x2(lnEntry, bar_index + 5)
+        line.set_x2(lnSl, bar_index + 5)
+        line.set_x2(lnTp1, bar_index + 5)
+        label.set_x(lblEntry, bar_index + 5)
+        label.set_x(lblSl, bar_index + 5)
+        label.set_x(lblTp1, bar_index + 5)
+
+if tradeState == -1
+    if hitTpShort
+        totalTrades += 1
+        winTrades += 1
+        maxWinPct := math.max(maxWinPct, ((entryPrice - tp1Level) / entryPrice) * 100)
+        tradeState := -2
+        slLevel := entryPrice
+        if showTgts and not na(lnSl)
+            line.set_y1(lnSl, slLevel)
+            line.set_y2(lnSl, slLevel)
+            label.set_y(lblSl, slLevel)
+            label.set_text(lblSl, "SL (BE):\\n" + str.tostring(slLevel, "#.####"))
+            
+    else if hitSlShort
+        totalTrades += 1
+        lossTrades += 1
+        maxLossPct := math.min(maxLossPct, ((entryPrice - slLevel) / entryPrice) * 100)
+        tradeState := 0
+        
+    if showTgts and not na(lnEntry) and tradeState != 0
+        line.set_x2(lnEntry, bar_index + 5)
+        line.set_x2(lnSl, bar_index + 5)
+        line.set_x2(lnTp1, bar_index + 5)
+        label.set_x(lblEntry, bar_index + 5)
+        label.set_x(lblSl, bar_index + 5)
+        label.set_x(lblTp1, bar_index + 5)
+
+if tradeState == -2
+    if low <= tp3Level
+        maxWinPct := math.max(maxWinPct, ((entryPrice - tp3Level) / entryPrice) * 100)
+        tradeState := 0
+    else if high >= slLevel
+        tradeState := 0
+        
+    if showTgts and not na(lnEntry) and tradeState != 0
+        line.set_x2(lnEntry, bar_index + 5)
+        line.set_x2(lnSl, bar_index + 5)
+        line.set_x2(lnTp1, bar_index + 5)
+        label.set_x(lblEntry, bar_index + 5)
+        label.set_x(lblSl, bar_index + 5)
+        label.set_x(lblTp1, bar_index + 5)
+
+
+// Señales Long
+if long_signal
+    string confTxt = str.tostring(confScoreLong) + "/10"
+    color sigColor = long_signal_strong ? color.new(#00E676, 0) : color.new(#4CAF50, 20)
+    label.new(bar_index, trend_line, "▲ V6\\n" + confTxt, color=sigColor, textcolor=color.white, style=label.style_label_up, size=long_signal_strong ? size.normal : size.small)
+
+// Señales Short
+if short_signal
+    string confTxt = str.tostring(confScoreShort) + "/10"
+    color sigColor = short_signal_strong ? color.new(#FF1744, 0) : color.new(#EF5350, 20)
+    label.new(bar_index, trend_line, "▼ V6\\n" + confTxt, color=sigColor, textcolor=color.white, style=label.style_label_down, size=short_signal_strong ? size.normal : size.small)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 📋 DASHBOARD ESTRELLA (Fusión V3 + V6 Extreme)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+var table panel = na
+
+// Función helper para pintar estrellas (Debe estar en el scope global)
+f_getStars(int score) =>
+    string stars = ""
+    for i = 1 to 5
+        stars += (score >= i ? "★" : "☆")
+    stars
+
+if barstate.islast and showPanel
+    if not na(panel)
+        table.delete(panel)
+        
+    panel := table.new(position.top_right, 2, 12, bgcolor=color.new(#0d1117, 10), border_width=1, border_color=color.new(#30363d, 50))
+    
+    // Header
+    table.cell(panel, 0, 0, "🌟 GAUSSIAN V6 + V3 DASH", text_color=#FFD600, text_size=size.small, bgcolor=color.new(#161b22, 0))
+    table.merge_cells(panel, 0, 0, 1, 0)
+    
+    // Mostrar Long Confidence
+    int displayScoreLong = math.round(confScoreLong / 2.0)
+    string longStars = f_getStars(displayScoreLong)
+    color longCol = displayScoreLong >= 4 ? #00E676 : displayScoreLong >= 2 ? #FFD600 : #FF1744
+    table.cell(panel, 0, 1, "Long Conf.", text_color=#8b949e, text_size=size.small, bgcolor=color.new(#0d1117, 0))
+    table.cell(panel, 1, 1, longStars, text_color=longCol, text_size=size.normal, bgcolor=color.new(#0d1117, 0))
+
+    // Mostrar Short Confidence
+    int displayScoreShort = math.round(confScoreShort / 2.0)
+    string shortStars = f_getStars(displayScoreShort)
+    color shortCol = displayScoreShort >= 4 ? #00E676 : displayScoreShort >= 2 ? #FFD600 : #FF1744
+    table.cell(panel, 0, 2, "Short Conf.", text_color=#8b949e, text_size=size.small, bgcolor=color.new(#0d1117, 0))
+    table.cell(panel, 1, 2, shortStars, text_color=shortCol, text_size=size.normal, bgcolor=color.new(#0d1117, 0))
+
+    // Filtros rápidos visuales (Semáforos)
+    color adxTfCol = adxValue >= adxThreshold ? #00E676 : #FF1744
+    table.cell(panel, 0, 3, "ADX Trend", text_color=#8b949e, text_size=size.small, bgcolor=color.new(#0d1117, 0))
+    table.cell(panel, 1, 3, "●", text_color=adxTfCol, text_size=size.normal, bgcolor=color.new(#0d1117, 0))
+
+    color biasTfCol = structureBias == 1 ? #00E676 : structureBias == -1 ? #FF1744 : #FFD600
+    table.cell(panel, 0, 4, "Structure Bias", text_color=#8b949e, text_size=size.small, bgcolor=color.new(#0d1117, 0))
+    table.cell(panel, 1, 4, "●", text_color=biasTfCol, text_size=size.normal, bgcolor=color.new(#0d1117, 0))
+
+    color kzTfCol = inKillZone ? #00E676 : #FF1744
+    table.cell(panel, 0, 5, "Session Volume", text_color=#8b949e, text_size=size.small, bgcolor=color.new(#0d1117, 0))
+    table.cell(panel, 1, 5, "●", text_color=kzTfCol, text_size=size.normal, bgcolor=color.new(#0d1117, 0))
+
+    // --- SECCIÓN DE ESTADÍSTICAS ---
+    float winrate = totalTrades > 0 ? (winTrades / totalTrades) * 100 : 0.0
+    color wrCol = winrate >= 60 ? #00E676 : winrate >= 40 ? #FFD600 : #FF1744
+    table.cell(panel, 0, 6, "Winrate %", text_color=#8b949e, text_size=size.small, bgcolor=color.new(#0d1117, 0))
+    table.cell(panel, 1, 6, str.tostring(winrate, "#.##") + "%", text_color=wrCol, text_size=size.small, bgcolor=color.new(#0d1117, 0))
+
+    table.cell(panel, 0, 7, "Total Trades", text_color=#8b949e, text_size=size.small, bgcolor=color.new(#0d1117, 0))
+    table.cell(panel, 1, 7, str.tostring(totalTrades), text_color=color.white, text_size=size.small, bgcolor=color.new(#0d1117, 0))
+
+    table.cell(panel, 0, 8, "Win / Loss", text_color=#8b949e, text_size=size.small, bgcolor=color.new(#0d1117, 0))
+    table.cell(panel, 1, 8, str.tostring(winTrades) + " / " + str.tostring(lossTrades), text_color=color.white, text_size=size.small, bgcolor=color.new(#0d1117, 0))
+
+    table.cell(panel, 0, 9, "Max Profit", text_color=#8b949e, text_size=size.small, bgcolor=color.new(#0d1117, 0))
+    table.cell(panel, 1, 9, "+" + str.tostring(maxWinPct, "#.##") + "%", text_color=#00E676, text_size=size.small, bgcolor=color.new(#0d1117, 0))
+
+    table.cell(panel, 0, 10, "Max Loss", text_color=#8b949e, text_size=size.small, bgcolor=color.new(#0d1117, 0))
+    table.cell(panel, 1, 10, str.tostring(maxLossPct, "#.##") + "%", text_color=#FF1744, text_size=size.small, bgcolor=color.new(#0d1117, 0))
+
+    // Status final claro y limpio
+    string statusStr = long_signal_strong ? "🔥 STRONG LONG" : short_signal_strong ? "🔥 STRONG SHORT" : long_signal ? "▲ BUY NOW" : short_signal ? "▼ SELL NOW" : "⏳ WAITING"
+    color statusCol = long_signal or long_signal_strong ? #00E676 : short_signal or short_signal_strong ? #FF1744 : #8b949e
+    table.cell(panel, 0, 11, "STATUS", text_color=color.black, text_size=size.small, bgcolor=statusCol)
+    table.cell(panel, 1, 11, statusStr, text_color=color.black, text_size=size.small, bgcolor=statusCol)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🔔 ALERTAS V6
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+alertcondition(long_signal, "V6 Long Signal", "V6 EXTREME LONG | {{ticker}} @ {{close}}")
+alertcondition(short_signal, "V6 Short Signal", "V6 EXTREME SHORT | {{ticker}} @ {{close}}")
+alertcondition(long_signal_strong, "V6 Strong Long", "🔥 V6 STRONG LONG | {{ticker}} @ {{close}}")
+alertcondition(short_signal_strong, "V6 Strong Short", "🔥 V6 STRONG SHORT | {{ticker}} @ {{close}}")
+alertcondition(hitSlLong or hitSlShort, "V6 Stop Loss Hit", "📛 V6 STOP LOSS | {{ticker}} @ {{close}}")
+alertcondition(hitTpLong or hitTpShort, "V6 Take Profit Hit", "✅ V6 TAKE PROFIT | {{ticker}} @ {{close}}")
+alertcondition(bullishAbsorption, "Bullish Absorption", "🐋 BULL ABSORPTION | {{ticker}}")
+alertcondition(bearishAbsorption, "Bearish Absorption", "🐋 BEAR ABSORPTION | {{ticker}}")
+alertcondition(bullishBOS, "Bullish BOS", "BOS↑ | {{ticker}}")
+alertcondition(bearishBOS, "Bearish BOS", "BOS↓ | {{ticker}}")
+alertcondition(bullishCHoCH, "Bullish CHoCH", "CHoCH↑ | {{ticker}}")
+alertcondition(bearishCHoCH, "Bearish CHoCH", "CHoCH↓ | {{ticker}}")
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 📡 WEBHOOK JSON V6
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+if useWebhook and long_signal
+    string json = '{"action":"open","side":"buy","symbol":"' + syminfo.ticker + '","price":"' + str.tostring(close) + '","confidence":' + str.tostring(confScoreLong) + ',"structure":"' + (structureBias == 1 ? "bullish" : structureBias == -1 ? "bearish" : "neutral") + '","adx":' + str.tostring(adxValue, "#.#") + ',"rsi":' + str.tostring(rsiVal, "#.#") + ',"killzone":"' + (inKillZone ? "active" : "inactive") + '","version":"v6_extreme"}'
+    alert(json, alert.freq_all)
+
+if useWebhook and short_signal
+    string json = '{"action":"open","side":"sell","symbol":"' + syminfo.ticker + '","price":"' + str.tostring(close) + '","confidence":' + str.tostring(confScoreShort) + ',"structure":"' + (structureBias == 1 ? "bullish" : structureBias == -1 ? "bearish" : "neutral") + '","adx":' + str.tostring(adxValue, "#.#") + ',"rsi":' + str.tostring(rsiVal, "#.#") + ',"killzone":"' + (inKillZone ? "active" : "inactive") + '","version":"v6_extreme"}'
+    alert(json, alert.freq_all)

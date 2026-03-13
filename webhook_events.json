@@ -1,0 +1,21 @@
+[
+    {
+        "ts": "2026-03-12T09:11:34.474031",
+        "symbol": "AZTECUSDT",
+        "action": "close",
+        "status": "ignored",
+        "reason": "Stale trade_id (OLD-TRADE-ID != TEST-AZTEC-LONG-1773286259)",
+        "trade_id": "OLD-TRADE-ID",
+        "close_reason": "TEST_STALE_2"
+    },
+    {
+        "ts": "2026-03-12T09:17:33.497138",
+        "symbol": "AZTECUSDT",
+        "action": "partial_close",
+        "status": "partial_closed",
+        "reason": "TP2",
+        "trade_id": "TEST-AZTEC-LONG-1773286259",
+        "close_pct": 30,
+        "new_sl": "0.02101"
+    }
+]

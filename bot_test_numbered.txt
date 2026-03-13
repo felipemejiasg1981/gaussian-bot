@@ -1,0 +1,396 @@
+     1	from flask import Flask, request, jsonify
+     2	from datetime import datetime
+     3	import ccxt
+     4	import os
+     5	
+     6	app = Flask(__name__)
+     7	
+     8	# ╔══════════════════════════════════════════════════════════════╗
+     9	# ║  CONFIGURACIÓN DEL BOT — Gaussian Trend v5 Pro Bot         ║
+    10	# ╚══════════════════════════════════════════════════════════════╝
+    11	
+    12	# 🔑 API KEYS — Se leen de variables de entorno (seguro para la nube)
+    13	# En Railway: se configuran en el dashboard → Variables
+    14	# En local: se usan los valores de abajo como fallback
+    15	API_KEY    = os.environ.get("BINANCE_API_KEY", "PCNKVFyJacgU0FLulSw6LcHpU1KSbtLaSJBRg5ihLLbsi7tfWcLsDiVyMWTtjMN4")
+    16	API_SECRET = os.environ.get("BINANCE_API_SECRET", "uOxQhv9babmSZO80MG4dfIVB2iiUXLE02e1aBjTK8cf8AjmSTcoCkZWC4j4GKBrJ")
+    17	# 🧪 MODO DE OPERACIÓN
+    18	# True  = Simula localmente (no toca el exchange, ideal para probar)
+    19	# False = Opera en Binance REAL con dinero real
+    20	DRY_RUN = False
+    21	
+    22	# 🪙 Pares permitidos (solo estos se operan)
+    23	PARES_PERMITIDOS = ["RIVERUSDT", "PIPPINUSDT"]
+    24	
+    25	# 💰 Capital por trade (en USDT)
+    26	MONTO_POR_TRADE = 5.0
+    27	
+    28	# ⚡ Apalancamiento
+    29	LEVERAGE = 5
+    30	
+    31	# 🔒 Máximo 1 trade abierto por cripto
+    32	MAX_TRADES_POR_PAR = 1
+    33	
+    34	# ════════════════════════════════════════════════════════════════
+    35	# CONEXIÓN A BINANCE (solo si DRY_RUN = False)
+    36	# ════════════════════════════════════════════════════════════════
+    37	exchange = None
+    38	if not DRY_RUN:
+    39	    exchange = ccxt.binance({
+    40	        'apiKey': API_KEY,
+    41	        'secret': API_SECRET,
+    42	        'options': {
+    43	            'defaultType': 'future',
+    44	        },
+    45	        'enableRateLimit': True,
+    46	    })
+    47	
+    48	# ════════════════════════════════════════════════════════════════
+    49	# Estado interno
+    50	# ════════════════════════════════════════════════════════════════
+    51	trades_abiertos = {}
+    52	historial = []
+    53	
+    54	
+    55	def log(msg):
+    56	    ts = datetime.now().strftime("%H:%M:%S")
+    57	    print(f"[{ts}] {msg}")
+    58	
+    59	
+    60	def par_limpio(symbol):
+    61	    """Normaliza el símbolo: RIVER/USDT → RIVERUSDT"""
+    62	    s = symbol.upper().replace("/", "").replace("-", "").replace(".P", "")
+    63	    if not s.endswith("USDT"):
+    64	        s += "USDT"
+    65	    return s
+    66	
+    67	
+    68	def par_ccxt(symbol):
+    69	    """Convierte RIVERUSDT → RIVER/USDT (formato ccxt)"""
+    70	    base = symbol.replace("USDT", "")
+    71	    return f"{base}/USDT"
+    72	
+    73	
+    74	def set_leverage(symbol_ccxt):
+    75	    """Configura el apalancamiento para el par"""
+    76	    if DRY_RUN:
+    77	        log(f"   ⚡ [DRY RUN] Leverage {LEVERAGE}x para {symbol_ccxt}")
+    78	        return
+    79	    try:
+    80	        exchange.set_leverage(LEVERAGE, symbol_ccxt)
+    81	        log(f"   ⚡ Leverage {LEVERAGE}x configurado para {symbol_ccxt}")
+    82	    except Exception as e:
+    83	        log(f"   ⚠️  Error configurando leverage: {e}")
+    84	
+    85	
+    86	def calcular_cantidad(symbol_ccxt, precio):
+    87	    """Calcula la cantidad de monedas a comprar con $MONTO_POR_TRADE"""
+    88	    try:
+    89	        precio_f = float(precio)
+    90	        cantidad = (MONTO_POR_TRADE * LEVERAGE) / precio_f
+    91	        if not DRY_RUN:
+    92	            cantidad = float(exchange.amount_to_precision(symbol_ccxt, cantidad))
+    93	        return round(cantidad, 6)
+    94	    except Exception as e:
+    95	        log(f"   ⚠️  Error calculando cantidad: {e}")
+    96	        return 0
+    97	
+    98	
+    99	def abrir_orden(symbol_ccxt, side, precio):
+   100	    """Abre una orden de mercado"""
+   101	    cantidad = calcular_cantidad(symbol_ccxt, precio)
+   102	    if cantidad <= 0:
+   103	        log(f"   ❌ Cantidad inválida: {cantidad}")
+   104	        return None
+   105	
+   106	    set_leverage(symbol_ccxt)
+   107	
+   108	    if DRY_RUN:
+   109	        fake_id = f"DRY-{datetime.now().strftime('%H%M%S')}"
+   110	        log(f"   ✅ [DRY RUN] ORDEN: {side.upper()} {cantidad} {symbol_ccxt} @ {precio}")
+   111	        log(f"   📋 Order ID: {fake_id}")
+   112	        return {'id': fake_id, 'status': 'simulated'}
+   113	
+   114	    try:
+   115	        order = exchange.create_market_order(
+   116	            symbol=symbol_ccxt,
+   117	            side=side,
+   118	            amount=cantidad,
+   119	        )
+   120	        log(f"   ✅ ORDEN EJECUTADA: {side.upper()} {cantidad} {symbol_ccxt}")
+   121	        log(f"   📋 Order ID: {order['id']}")
+   122	        return order
+   123	    except Exception as e:
+   124	        log(f"   ❌ ERROR abriendo orden: {e}")
+   125	        return None
+   126	
+   127	
+   128	def cerrar_parcial(symbol_ccxt, side_original, porcentaje, precio):
+   129	    """Cierra un % de la posición (side inverso)"""
+   130	    close_side = 'sell' if side_original == 'buy' else 'buy'
+   131	    cantidad_total = calcular_cantidad(symbol_ccxt, precio)
+   132	    cantidad_cerrar = round(cantidad_total * (porcentaje / 100.0), 6)
+   133	
+   134	    if cantidad_cerrar <= 0:
+   135	        log(f"   ⚠️  Cantidad a cerrar muy pequeña: {cantidad_cerrar}")
+   136	        return None
+   137	
+   138	    if DRY_RUN:
+   139	        log(f"   ✅ [DRY RUN] PARCIAL: {close_side.upper()} {cantidad_cerrar} {symbol_ccxt} ({porcentaje}%)")
+   140	        return {'id': f"DRY-P-{datetime.now().strftime('%H%M%S')}", 'status': 'simulated'}
+   141	
+   142	    try:
+   143	        if not DRY_RUN:
+   144	            cantidad_cerrar = float(exchange.amount_to_precision(symbol_ccxt, cantidad_cerrar))
+   145	        order = exchange.create_market_order(
+   146	            symbol=symbol_ccxt,
+   147	            side=close_side,
+   148	            amount=cantidad_cerrar,
+   149	            params={'reduceOnly': True}
+   150	        )
+   151	        log(f"   ✅ PARCIAL CERRADO: {close_side.upper()} {cantidad_cerrar} {symbol_ccxt} ({porcentaje}%)")
+   152	        return order
+   153	    except Exception as e:
+   154	        log(f"   ❌ ERROR cerrando parcial: {e}")
+   155	        return None
+   156	
+   157	
+   158	def cerrar_todo(symbol_ccxt, side_original):
+   159	    """Cierra toda la posición abierta"""
+   160	    close_side = 'sell' if side_original == 'buy' else 'buy'
+   161	
+   162	    if DRY_RUN:
+   163	        log(f"   ✅ [DRY RUN] POSICIÓN CERRADA: {close_side.upper()} toda la posición de {symbol_ccxt}")
+   164	        return {'id': f"DRY-C-{datetime.now().strftime('%H%M%S')}", 'status': 'simulated'}
+   165	
+   166	    try:
+   167	        positions = exchange.fetch_positions([symbol_ccxt])
+   168	        for pos in positions:
+   169	            amt = abs(float(pos.get('contracts', 0)))
+   170	            if amt > 0:
+   171	                order = exchange.create_market_order(
+   172	                    symbol=symbol_ccxt,
+   173	                    side=close_side,
+   174	                    amount=amt,
+   175	                    params={'reduceOnly': True}
+   176	                )
+   177	                log(f"   ✅ POSICIÓN CERRADA: {symbol_ccxt} | {amt} contratos")
+   178	                return order
+   179	        log(f"   ⚠️  No se encontró posición abierta en {symbol_ccxt}")
+   180	        return None
+   181	    except Exception as e:
+   182	        log(f"   ❌ ERROR cerrando posición: {e}")
+   183	        return None
+   184	
+   185	
+   186	# ════════════════════════════════════════════════════════════════
+   187	# ENDPOINTS
+   188	# ════════════════════════════════════════════════════════════════
+   189	@app.route('/')
+   190	def index():
+   191	    pares = ", ".join(PARES_PERMITIDOS)
+   192	    activos = len(trades_abiertos)
+   193	    modo = "🧪 DRY RUN" if DRY_RUN else "🔴 REAL"
+   194	    return (
+   195	        f"✅ Bot Gaussian v5 Pro en línea — {modo}<br>"
+   196	        f"💰 ${MONTO_POR_TRADE} x{LEVERAGE} por trade<br>"
+   197	        f"🪙 Pares: {pares}<br>"
+   198	        f"📊 Trades activos: {activos}/{len(PARES_PERMITIDOS)}<br>"
+   199	        f"⏳ Esperando webhooks en /webhook..."
+   200	    )
+   201	
+   202	
+   203	@app.route('/webhook', methods=['POST'])
+   204	def webhook_receiver():
+   205	    data = request.get_json(force=True, silent=True)
+   206	
+   207	    if not data:
+   208	        log("⚠️  Webhook vacío recibido")
+   209	        return jsonify({"status": "error", "message": "No JSON"}), 400
+   210	
+   211	    action   = data.get('action', '').lower()
+   212	    symbol   = par_limpio(data.get('symbol', ''))
+   213	    trade_id = data.get('trade_id', 'N/A')
+   214	    side     = data.get('side', '').lower()
+   215	    price    = data.get('price', 'N/A')
+   216	    sym_ccxt = par_ccxt(symbol)
+   217	
+   218	    print(f"\n{'='*50}")
+   219	    log(f"🚨 WEBHOOK: {action.upper()} | {symbol} | Trade #{trade_id}")
+   220	    print(f"{'='*50}")
+   221	
+   222	    # ─── FILTRO: Par permitido ───
+   223	    if symbol not in PARES_PERMITIDOS:
+   224	        log(f"❌ RECHAZADO — {symbol} no está en la lista {PARES_PERMITIDOS}")
+   225	        return jsonify({"status": "rejected", "reason": f"Par {symbol} no permitido"}), 200
+   226	
+   227	    # ═══════════════════════════════════════════════════
+   228	    # OPEN — Abrir nuevo trade
+   229	    # ═══════════════════════════════════════════════════
+   230	    if action == 'open':
+   231	        if symbol in trades_abiertos:
+   232	            log(f"❌ RECHAZADO — Ya hay trade en {symbol} (#{trades_abiertos[symbol]['trade_id']})")
+   233	            return jsonify({"status": "rejected", "reason": "Max 1 trade por par"}), 200
+   234	
+   235	        sl   = data.get('sl', 'N/A')
+   236	        conf = data.get('conf', 'N/A')
+   237	
+   238	        log(f"📤 ABRIENDO {side.upper()} {symbol} @ {price}")
+   239	        log(f"   💵 ${MONTO_POR_TRADE} x{LEVERAGE} = ${MONTO_POR_TRADE * LEVERAGE} exposición")
+   240	
+   241	        # ── EJECUTAR EN BINANCE ──
+   242	        order = abrir_orden(sym_ccxt, side, price)
+   243	
+   244	        trades_abiertos[symbol] = {
+   245	            "trade_id": trade_id,
+   246	            "side": side,
+   247	            "entry": price,
+   248	            "sl": sl,
+   249	            "posicion_pct": 100,
+   250	            "order_id": order['id'] if order else None,
+   251	        }
+   252	
+   253	    # ═══════════════════════════════════════════════════
+   254	    # PARTIAL_CLOSE — Cierre parcial (TP hit)
+   255	    # ═══════════════════════════════════════════════════
+   256	    elif action == 'partial_close':
+   257	        reason    = data.get('reason', 'N/A')
+   258	        close_pct = int(data.get('close_pct', 0))
+   259	        new_sl    = data.get('new_sl', 'N/A')
+   260	
+   261	        if symbol not in trades_abiertos:
+   262	            log(f"⚠️  partial_close para {symbol} pero no hay trade abierto")
+   263	            return jsonify({"status": "error", "reason": "No trade abierto"}), 200
+   264	
+   265	        side_orig = trades_abiertos[symbol]['side']
+   266	        log(f"🎯 {reason} HIT — Cerrando {close_pct}% de {symbol}")
+   267	
+   268	        # ── EJECUTAR PARCIAL EN BINANCE ──
+   269	        cerrar_parcial(sym_ccxt, side_orig, close_pct, price)
+   270	
+   271	        trades_abiertos[symbol]['sl'] = new_sl
+   272	        trades_abiertos[symbol]['posicion_pct'] -= close_pct
+   273	
+   274	        log(f"   🛑 SL movido a: {new_sl}")
+   275	        log(f"   📊 Posición restante: {trades_abiertos[symbol]['posicion_pct']}%")
+   276	
+   277	    # ═══════════════════════════════════════════════════
+   278	    # UPDATE_SL — Trailing SL dinámico
+   279	    # ═══════════════════════════════════════════════════
+   280	    elif action == 'update_sl':
+   281	        new_sl = data.get('new_sl', 'N/A')
+   282	        if symbol in trades_abiertos:
+   283	            old_sl = trades_abiertos[symbol].get('sl', '?')
+   284	            trades_abiertos[symbol]['sl'] = new_sl
+   285	            log(f"🔄 SL: {old_sl} → {new_sl} ({symbol})")
+   286	        else:
+   287	            log(f"⚠️  update_sl para {symbol} pero no hay trade abierto")
+   288	
+   289	    # ═══════════════════════════════════════════════════
+   290	    # ADD — Entry 2 / Re-entry
+   291	    # ═══════════════════════════════════════════════════
+   292	    elif action == 'add':
+   293	        reason = data.get('reason', 'N/A')
+   294	        log(f"➕ {reason.upper()} — {side.upper()} {symbol} @ {price}")
+   295	
+   296	        # ── EJECUTAR ADD EN BINANCE ──
+   297	        abrir_orden(sym_ccxt, side, price)
+   298	
+   299	    # ═══════════════════════════════════════════════════
+   300	    # CLOSE — Trade cerrado (SL hit)
+   301	    # ═══════════════════════════════════════════════════
+   302	    elif action == 'close':
+   303	        pnl    = data.get('pnl', 'N/A')
+   304	        reason = data.get('reason', 'SL')
+   305	
+   306	        log(f"🔴 CERRANDO {symbol} — {reason} | PnL: {pnl}")
+   307	
+   308	        if symbol in trades_abiertos:
+   309	            side_orig = trades_abiertos[symbol]['side']
+   310	
+   311	            # ── CERRAR TODO EN BINANCE ──
+   312	            cerrar_todo(sym_ccxt, side_orig)
+   313	
+   314	            trade_info = trades_abiertos.pop(symbol)
+   315	            historial.append({**trade_info, "pnl": pnl, "closed_at": datetime.now().isoformat()})
+   316	            log(f"   🟢 {symbol} libre para nuevos trades")
+   317	        else:
+   318	            log(f"⚠️  close para {symbol} pero no hay trade registrado")
+   319	
+   320	    else:
+   321	        log(f"⚠️  Acción desconocida: {action}")
+   322	
+   323	    # Estado global
+   324	    print(f"\n📋 Trades activos: {len(trades_abiertos)}/{len(PARES_PERMITIDOS)}")
+   325	    for par, info in trades_abiertos.items():
+   326	        print(f"   • {par}: {info['side'].upper()} desde {info['entry']} | SL: {info['sl']} | Pos: {info['posicion_pct']}%")
+   327	    print()
+   328	
+   329	    return jsonify({"status": "success", "message": f"{action} procesado"}), 200
+   330	
+   331	
+   332	@app.route('/status')
+   333	def status():
+   334	    return jsonify({
+   335	        "modo": "TESTNET" if exchange.sandbox else "REAL",
+   336	        "activos": trades_abiertos,
+   337	        "historial": historial[-10:],
+   338	        "config": {
+   339	            "pares": PARES_PERMITIDOS,
+   340	            "monto": MONTO_POR_TRADE,
+   341	            "leverage": LEVERAGE,
+   342	        }
+   343	    })
+   344	
+   345	
+   346	@app.route('/balance')
+   347	def balance():
+   348	    """Ver el balance de la cuenta"""
+   349	    if DRY_RUN:
+   350	        return jsonify({"modo": "DRY RUN", "total": "simulado", "libre": "simulado"})
+   351	    try:
+   352	        bal = exchange.fetch_balance()
+   353	        usdt = bal.get('USDT', {})
+   354	        return jsonify({
+   355	            "total": usdt.get('total', 0),
+   356	            "libre": usdt.get('free', 0),
+   357	            "en_uso": usdt.get('used', 0),
+   358	        })
+   359	    except Exception as e:
+   360	        return jsonify({"error": str(e)}), 500
+   361	
+   362	
+   363	if __name__ == '__main__':
+   364	    modo = "🧪 DRY RUN (simulación)" if DRY_RUN else "🔴 PRODUCCIÓN REAL"
+   365	
+   366	    print()
+   367	    print("╔══════════════════════════════════════════════════╗")
+   368	    print(f"║   🤖 Gaussian Trend v5 Pro Bot                   ║")
+   369	    print(f"║   {modo:<46} ║")
+   370	    print("╠══════════════════════════════════════════════════╣")
+   371	    print(f"║   💰 Monto    : ${MONTO_POR_TRADE} por trade              ║")
+   372	    print(f"║   ⚡ Leverage : x{LEVERAGE}                              ║")
+   373	    print(f"║   🪙 Pares    : {', '.join(PARES_PERMITIDOS):<22}     ║")
+   374	    print(f"║   🔒 Máx/par  : {MAX_TRADES_POR_PAR} trade                        ║")
+   375	    print("╠══════════════════════════════════════════════════╣")
+   376	    print("║   📡 Webhook   : http://127.0.0.1:5000/webhook  ║")
+   377	    print("║   📊 Estado    : http://127.0.0.1:5000/status   ║")
+   378	    print("╚══════════════════════════════════════════════════╝")
+   379	
+   380	    if DRY_RUN:
+   381	        print(f"\n✅ Modo DRY RUN activo — todas las órdenes se simulan localmente")
+   382	        print(f"   Para operar con dinero real, cambia DRY_RUN = False en bot_test.py")
+   383	    else:
+   384	        try:
+   385	            bal = exchange.fetch_balance()
+   386	            usdt_total = bal.get('USDT', {}).get('total', 0)
+   387	            print(f"\n✅ Conectado a Binance")
+   388	            print(f"💰 Balance USDT: {usdt_total}")
+   389	        except Exception as e:
+   390	            print(f"\n❌ Error conectando a Binance: {e}")
+   391	            print("   Verifica tus API Keys en las líneas 14-15 del archivo")
+   392	
+   393	    print()
+   394	    port = int(os.environ.get("PORT", 5000))
+   395	    app.run(host="0.0.0.0", port=port, debug=(not os.environ.get("RAILWAY_ENVIRONMENT")))
+   396	
