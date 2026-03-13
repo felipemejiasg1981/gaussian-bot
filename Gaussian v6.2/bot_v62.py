@@ -57,10 +57,10 @@ def get_exchange():
 
     key = os.environ.get("BITGET_API_KEY")
     secret = os.environ.get("BITGET_API_SECRET")
-    password = os.environ.get("BITGET_PASSWORD")
+    password = os.environ.get("BITGET_PASSWORD") or os.environ.get("BG_PASS")
 
     if not all([key, secret, password]):
-        log("⚠️ Faltan API Keys en el archivo .env de v6.2")
+        log("⚠️ Faltan API Keys (API_KEY, SECRET o PASSWORD/BG_PASS) en el entorno")
         return None
 
     try:
@@ -314,6 +314,15 @@ def status():
         "active_trades": trades_abiertos,
         "recent_events": eventos_recientes
     })
+
+@app.route('/logs')
+def view_logs():
+    try:
+        if ERROR_LOG.exists():
+            return f"<pre>{ERROR_LOG.read_text()}</pre>"
+        return "No hay logs de errores aún."
+    except Exception as e:
+        return str(e)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5002))
