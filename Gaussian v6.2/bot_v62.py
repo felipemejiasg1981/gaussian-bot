@@ -300,19 +300,57 @@ def cerrar_posicion(symbol):
         log(f"❌ Error cerrando posición: {e}")
         return False
 
-# ════════════════════════════════════════════════════════════════
-# ENDPOINTS
-# ════════════════════════════════════════════════════════════════
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    data = request.get_json(force=True, silent=True)
-    if not data: return jsonify({"status": "error", "reason": "No JSON"}), 400
+def actualizar_sl(symbol, nuevo_sl):
+    sym_ccxt = par_ccxt(symbol)
+    if DRY_RUN:
+        log(f"🧪 [DRY RUN] UPDATE SL {symbol} @ {nuevo_sl}")
+        return True
+    
+    ex = get_exchange()
+    if not ex: return False
+    
+    try:
+        # Cancelar triggers de SL/TP anteriores
+        ex.cancel_all_orders(sym_ccxt, params={'stop': True})
+        
+        # Buscar posición actual para colocar el SL sobre la cantidad actual real
+        positions = ex.fetch_positions([sym_ccxt])
+        executed = False
+        for p in positions:
+            amt = abs(float(p.get('contracts', 0)))
+            if amt > 0:
+                side_presente = 'buy' if p.get('side', 'long') == 'long' else 'sell'
+                close_side = 'sell' if side_presente == 'buy' else 'buy'
+                
+                ex.create_order(
+                    symbol=sym_ccxt,
+                    type='market',
+                    side=close_side,
+                    amount=amt,
+                    params={
+                        'stop': True,
+                        'triggerPrice': float(nuevo_sl),
+                        'triggerType': 'mark_price',
+                        'reduceOnly': True
+                    }
+                )
+                log(f"🛡️ SL ACTUALIZADO: {symbol} -> {nuevo_sl}")
+                executed = True
+        return executed
+    except Exception as e:
+        log(f"❌ Error actualizando SL para {symbol}: {e}")
+        return False
 
+# ════════════════════════════════════════════════════════════════
+# ENDPOINTS Y PROCESAMIENTO EN SEGUNDO PLANO
+# ════════════════════════════════════════════════════════════════
+def process_webhook_logic(data):
     action = data.get('action', '').lower()
     symbol = data.get('symbol', 'N/A')
     side   = data.get('side', '').lower()
     price  = data.get('price', 0)
-    sl     = data.get('sl', 'N/A')
+    sl     = data.get('sl', data.get('emergency_sl', 'N/A'))
+    nuevo_sl = data.get('new_sl', 'N/A')
     tid    = data.get('trade_id', 'N/A')
     pct    = data.get('close_pct') or 30.0  # Usar 30.0% si falta en el JSON por error
 
@@ -365,12 +403,42 @@ def webhook():
                 trades_abiertos.pop(symbol)
                 save_state()
             record_event(symbol, action, "closed", "Success", trade_id=tid)
-            return jsonify({"status": "success"}), 200
         else:
             if symbol in trades_abiertos:
                 trades_abiertos.pop(symbol)
                 save_state()
-            return jsonify({"status": "ignored", "reason": "No position in Bitget"}), 200
+
+    elif action == 'update_sl':
+        if nuevo_sl and nuevo_sl != 'N/A':
+            if actualizar_sl(symbol, nuevo_sl):
+                if symbol in trades_abiertos:
+                    trades_abiertos[symbol]['sl'] = nuevo_sl
+                    save_state()
+                record_event(symbol, action, "sl_updated", f"New SL: {nuevo_sl}", trade_id=tid)
+    
+    elif action == 'reentry':
+        with trade_lock:
+            # Reentry es como abrir orden extra, reutiliza logic de abrir
+            log(f"🔄 Reingreso (Escala de Posición) en {symbol}")
+            res = abrir_posicion(symbol, side, price, sl)
+            if res:
+                if symbol in trades_abiertos:
+                    # Update local ref
+                    amt_f = float(trades_abiertos[symbol]['amount']) + float(res.get('amount', 0.0))
+                    trades_abiertos[symbol]['amount'] = amt_f
+                    save_state()
+                record_event(symbol, action, "reentry", "Scaled in", trade_id=tid)
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.get_json(force=True, silent=True)
+    if not data: return jsonify({"status": "error", "reason": "No JSON"}), 400
+    
+    # 1. Start execution in background (Threading) to prevent TradingView 3.0s Timeout
+    threading.Thread(target=process_webhook_logic, args=(data,)).start()
+    
+    # 2. Inmediately return 200 OK
+    return jsonify({"status": "received", "message": "processing in background"}), 200
 
 @app.route('/status')
 def status():
