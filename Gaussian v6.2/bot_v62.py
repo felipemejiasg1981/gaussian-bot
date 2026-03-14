@@ -23,7 +23,7 @@ ERROR_LOG = BASE_DIR / "historial_de_fallos.md"
 DRY_RUN = os.environ.get("DRY_RUN", "False").lower() == "true"
 
 # 💰 Capital por trade (en USDT)
-MONTO_POR_TRADE = 8.0
+MONTO_POR_TRADE = 10.0
 LEVERAGE = 10
 
 # 🔒 Límites de trades
