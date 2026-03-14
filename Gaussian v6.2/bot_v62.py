@@ -199,7 +199,7 @@ def abrir_posicion(symbol, side, price, sl):
             qty = (MONTO_POR_TRADE * LEVERAGE) / float(price)
             qty = float(ex.amount_to_precision(sym_ccxt, qty))
 
-            # Abrir orden
+            # Abrir orden principal
             order = ex.create_order(
                 symbol=sym_ccxt,
                 type='market',
@@ -208,33 +208,37 @@ def abrir_posicion(symbol, side, price, sl):
                 params={'marginMode': 'cross', 'oneWayMode': True}
             )
             log(f"✅ ORDEN EJECUTADA: {side.upper()} {qty} {symbol}")
-
-            # Colocar SL Real
+            
+            # Una vez la orden principal está ejecutada, intentamos el SL en un bloque SEPARADO
+            # para no duplicar la orden de market si el SL falla.
             if sl and sl != 'N/A':
-                close_side = 'sell' if side == 'buy' else 'buy'
-                ex.create_order(
-                    symbol=sym_ccxt,
-                    type='market',
-                    side=close_side,
-                    amount=qty,
-                    params={
-                        'stop': True,
-                        'triggerPrice': float(sl),
-                        'triggerType': 'mark_price',
-                        'reduceOnly': True
-                    }
-                )
-                log(f"🛡️ SL COLOCADO: {sl}")
+                try:
+                    close_side = 'sell' if side == 'buy' else 'buy'
+                    ex.create_order(
+                        symbol=sym_ccxt,
+                        type='market',
+                        side=close_side,
+                        amount=qty,
+                        params={
+                            'stop': True,
+                            'triggerPrice': float(sl),
+                            'triggerType': 'mark_price',
+                            'reduceOnly': True
+                        }
+                    )
+                    log(f"🛡️ SL COLOCADO: {sl}")
+                except Exception as sl_error:
+                    log(f"⚠️ Error colocando SL nativo para {symbol}: {sl_error}. La posición quedó abierta sin SL de Exchange.")
             
             return {"id": order['id'], "amount": qty}
+
         except Exception as e:
             if attempt < max_retries - 1:
-                log(f"⚠️ Intento {attempt+1} fallido para {symbol}: {e}. Reintentando...")
+                log(f"⚠️ Intento {attempt+1} fallido completando OPEN para {symbol}: {e}. Reintentando...")
                 time.sleep(1.5)
             else:
-                log(f"❌ Error final abriendo posición en {symbol} tras {max_retries} intentos: {e}")
+                log(f"❌ Error final abriendo posición MARKET en {symbol} tras {max_retries} intentos: {e}")
                 return None
-
 def cerrar_parcial(symbol, pct):
     sym_ccxt = par_ccxt(symbol)
     if DRY_RUN:
