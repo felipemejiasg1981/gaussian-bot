@@ -1,0 +1,26 @@
+{
+  "generated_at_utc": "2026-03-13T00:59:18.641518+00:00",
+  "source": {
+    "contracts": "https://api.bitget.com/api/v2/mix/market/contracts?productType=USDT-FUTURES",
+    "candles": "https://api.bitget.com/api/v2/mix/market/candles"
+  },
+  "scanner": {
+    "profile": "Base TV",
+    "granularity": "4H",
+    "lookback_days": 365,
+    "min_trades": 1,
+    "universe": "Bitget USDT perpetual futures, crypto only (RWA/stable/metals filtered out)",
+    "strategy_scope": "Python approximation of the Gaussian Trend IA Pro v6.2 core: dynamic Gaussian trend, CHOP, WAE, Frost, HTF alignment, slope/bandwidth, trailing stop and partial targets"
+  },
+  "counts": {
+    "symbols_ranked": 0,
+    "errors": 0
+  },
+  "top": {
+    "quality_score": [],
+    "win_rate": [],
+    "profit_factor": [],
+    "max_drawdown_best": [],
+    "net_return": []
+  }
+}

@@ -1,0 +1,278 @@
+{
+  "generated_at_utc": "2026-03-13T01:48:04.054170+00:00",
+  "source": {
+    "contracts": "https://api.bitget.com/api/v2/mix/market/contracts?productType=USDT-FUTURES",
+    "candles": "https://api.bitget.com/api/v2/mix/market/candles"
+  },
+  "scanner": {
+    "profile": "Manual",
+    "granularity": "45m",
+    "lookback_days": 7,
+    "min_trades": 0,
+    "supported_timeframes": [
+      "5m",
+      "15m",
+      "30m",
+      "45m",
+      "1H",
+      "4H"
+    ],
+    "universe": "Bitget USDT perpetual futures, crypto only (RWA/stable/metals filtered out)",
+    "strategy_scope": "Python approximation of the Gaussian Trend IA Pro v6.2 core: dynamic Gaussian trend, score engine, SMC, oscillators, WAE, Frost, HTF, CHOP, liquidity context, and trailing stop with partial targets",
+    "metrics_origin": "Backtest por símbolo del scanner, pensado para emular las métricas de estrategia que TradingView reporta por activo: trades, winrate, PF, drawdown, retorno, expectancy, wins y losses.",
+    "pine_effective_config": {
+      "flat": {
+        "profile": "Manual",
+        "granularity": "45m",
+        "lookback_days": 7,
+        "min_trades": 0,
+        "max_workers": 2,
+        "top": 20,
+        "max_symbols": 1,
+        "len_cfg": 35,
+        "mode_cfg": "AVG",
+        "dist_cfg": 2.0,
+        "use_adaptive_sigma": true,
+        "sigma_base": 3.0,
+        "sigma_min": 5.0,
+        "sigma_max": 18.0,
+        "use_adx_filter": false,
+        "adx_len": 14,
+        "adx_threshold": 25.0,
+        "use_dmi_confirm": false,
+        "use_smc_filter": false,
+        "structure_lookback": 50,
+        "swing_strength": 5,
+        "smc_break_atr_mult": 0.1,
+        "smc_fresh_bars": 12,
+        "use_volume_absorption": true,
+        "absorption_threshold": 1.5,
+        "use_multi_osc": true,
+        "use_rsi": false,
+        "use_stoch": true,
+        "use_cci": true,
+        "rsi_len": 14,
+        "stoch_len": 14,
+        "cci_len": 20,
+        "rsi_oversold": 35.0,
+        "rsi_overbought": 65.0,
+        "use_kill_zones": false,
+        "kz_london_open": true,
+        "kz_ny_open": true,
+        "kz_london_close": false,
+        "kz_asia_session": false,
+        "use_chop": false,
+        "chop_len": 20,
+        "chop_threshold": 50.0,
+        "use_squeeze": false,
+        "sqz_bb_len": 20,
+        "sqz_bb_mult": 2.0,
+        "sqz_kc_len": 20,
+        "sqz_kc_mult": 1.5,
+        "sqz_lookback": 8,
+        "use_wae": true,
+        "wae_sens": 150,
+        "wae_fast": 20,
+        "wae_slow": 40,
+        "wae_bb_len": 20,
+        "wae_bb_mult": 2.0,
+        "wae_dead_zone": 3.7,
+        "use_fisher": false,
+        "fisher_len": 10,
+        "fisher_extreme": 1.5,
+        "use_frost": true,
+        "min_frost_conf": 2,
+        "frost_mode": "Intraday",
+        "use_htf_alignment": false,
+        "require_dual_htf": true,
+        "min_context_score": 2,
+        "use_trend_slope": false,
+        "min_trend_slope_atr": 0.12,
+        "use_band_width": true,
+        "min_band_width_atr": 1.1,
+        "sl_mode": "Hibrido",
+        "target_mode": "Hibrido",
+        "use_liquidity_filter": false,
+        "require_sweep_reject": true,
+        "sweep_lookback": 30,
+        "pivot_len": 3,
+        "piv_hold_bars": 200,
+        "prox_atr": 1.0,
+        "break_strength_min": 0.55,
+        "snap_pct": 18.0,
+        "use_divergence": false,
+        "div_lookback": 30,
+        "div_pivot_strength": 5,
+        "min_score_ratio": 0.35,
+        "use_reentry": true,
+        "reentry_bars": 6,
+        "atr_len": 14,
+        "max_sl_pct": 0.06,
+        "sl_buf": 0.002,
+        "tp1_r": 1.0,
+        "tp2_r": 2.0,
+        "tp3_r": 3.0,
+        "tp4_r": 4.236,
+        "pct_tp1": 0.3,
+        "pct_tp2": 0.3,
+        "pct_tp3": 0.2,
+        "pct_runner": 0.2,
+        "fee_pct": 0.0015
+      },
+      "scanner_controls": {
+        "profile": "Manual",
+        "granularity": "45m",
+        "lookback_days": 7,
+        "min_trades": 0,
+        "max_workers": 2,
+        "top": 20,
+        "max_symbols": 1
+      },
+      "gaussian_kernel": {
+        "len_cfg": 35,
+        "mode_cfg": "AVG",
+        "dist_cfg": 2.0
+      },
+      "extreme_engine": {
+        "use_adaptive_sigma": true,
+        "sigma_base": 3.0,
+        "sigma_min": 5.0,
+        "sigma_max": 18.0
+      },
+      "adx_trend_strength": {
+        "use_adx_filter": false,
+        "adx_len": 14,
+        "adx_threshold": 25.0,
+        "use_dmi_confirm": false
+      },
+      "market_structure": {
+        "use_smc_filter": false,
+        "structure_lookback": 50,
+        "swing_strength": 5,
+        "smc_break_atr_mult": 0.1,
+        "smc_fresh_bars": 12
+      },
+      "volume_delta": {
+        "use_volume_absorption": true,
+        "absorption_threshold": 1.5
+      },
+      "oscillator_confluence": {
+        "use_multi_osc": true,
+        "use_rsi": false,
+        "use_stoch": true,
+        "use_cci": true,
+        "rsi_len": 14,
+        "stoch_len": 14,
+        "cci_len": 20,
+        "rsi_oversold": 35.0,
+        "rsi_overbought": 65.0
+      },
+      "kill_zones": {
+        "use_kill_zones": false,
+        "kz_london_open": true,
+        "kz_ny_open": true,
+        "kz_london_close": false,
+        "kz_asia_session": false
+      },
+      "regime_filters": {
+        "use_htf_alignment": false,
+        "require_dual_htf": true,
+        "use_trend_slope": false,
+        "min_trend_slope_atr": 0.12,
+        "use_band_width": true,
+        "min_band_width_atr": 1.1
+      },
+      "liquidity_targets": {
+        "sl_mode": "Hibrido",
+        "target_mode": "Hibrido",
+        "use_liquidity_filter": false,
+        "require_sweep_reject": true,
+        "sweep_lookback": 30,
+        "pivot_len": 3,
+        "piv_hold_bars": 200,
+        "prox_atr": 1.0,
+        "break_strength_min": 0.55,
+        "snap_pct": 18.0
+      },
+      "divergence_engine": {
+        "use_divergence": false,
+        "div_lookback": 30,
+        "div_pivot_strength": 5
+      },
+      "choppiness_index": {
+        "use_chop": false,
+        "chop_len": 20,
+        "chop_threshold": 50.0
+      },
+      "squeeze_momentum": {
+        "use_squeeze": false,
+        "sqz_bb_len": 20,
+        "sqz_bb_mult": 2.0,
+        "sqz_kc_len": 20,
+        "sqz_kc_mult": 1.5,
+        "sqz_lookback": 8
+      },
+      "wae_explosion": {
+        "use_wae": true,
+        "wae_sens": 150,
+        "wae_fast": 20,
+        "wae_slow": 40,
+        "wae_bb_len": 20,
+        "wae_bb_mult": 2.0,
+        "wae_dead_zone": 3.7
+      },
+      "fisher_transform": {
+        "use_fisher": false,
+        "fisher_len": 10,
+        "fisher_extreme": 1.5
+      },
+      "frost_engine": {
+        "use_frost": true,
+        "min_frost_conf": 2,
+        "frost_mode": "Intraday"
+      },
+      "score_engine": {
+        "min_score_ratio": 0.35
+      },
+      "reentry_system": {
+        "use_reentry": true,
+        "reentry_bars": 6
+      },
+      "targets_stop_loss": {
+        "atr_len": 14,
+        "max_sl_pct": 0.06,
+        "sl_buf": 0.002,
+        "tp1_r": 1.0,
+        "tp2_r": 2.0,
+        "tp3_r": 3.0,
+        "tp4_r": 4.236,
+        "pct_tp1": 0.3,
+        "pct_tp2": 0.3,
+        "pct_tp3": 0.2,
+        "pct_runner": 0.2
+      },
+      "break_even": {
+        "fee_pct": 0.0015
+      }
+    },
+    "pine_not_ported_exactly": [
+      "Mode MEDIAN/TRIMMED exacto del gaussian ensemble",
+      "SMC BOS/CHoCH y pivots exactos barra a barra como Pine",
+      "target snap por estructura/HTF idéntico a TradingView",
+      "kill zones y ejecucion intrabar con bar magnifier",
+      "re-entry 50/50 completo",
+      "ejecución intrabar idéntica a bar magnifier"
+    ]
+  },
+  "counts": {
+    "symbols_ranked": 0,
+    "errors": 0
+  },
+  "top": {
+    "quality_score": [],
+    "win_rate": [],
+    "profit_factor": [],
+    "max_drawdown_best": [],
+    "net_return": []
+  }
+}

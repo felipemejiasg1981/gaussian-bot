@@ -1,0 +1,5 @@
+ccxt
+flask
+openpyxl
+python-dotenv
+gunicorn

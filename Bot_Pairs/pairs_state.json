@@ -1,0 +1,26 @@
+{
+    "active_positions": {
+        "ETH/USDT:USDT-INJ/USDT:USDT": false,
+        "NEAR/USDT:USDT-SUI/USDT:USDT": false,
+        "SOL/USDT:USDT-LINK/USDT:USDT": false,
+        "BTC/USDT:USDT-XRP/USDT:USDT": false,
+        "SOL/USDT:USDT-ADA/USDT:USDT": true
+    },
+    "position_details": {
+        "ETH/USDT:USDT-INJ/USDT:USDT": {},
+        "NEAR/USDT:USDT-SUI/USDT:USDT": {},
+        "SOL/USDT:USDT-LINK/USDT:USDT": {},
+        "BTC/USDT:USDT-XRP/USDT:USDT": {},
+        "SOL/USDT:USDT-ADA/USDT:USDT": {
+            "p1_side": "sell",
+            "p2_side": "buy",
+            "p1_contracts": 0.8,
+            "p2_contracts": 409.0,
+            "p1_entry": 86.9278,
+            "p2_entry": 0.2598,
+            "p1_mult": 1.0,
+            "p2_mult": 1.0,
+            "time_entry": 1773534060.0
+        }
+    }
+}
