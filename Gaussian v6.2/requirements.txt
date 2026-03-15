@@ -1,8 +1,0 @@
-ccxt
-flask
-pandas
-numpy
-statsmodels
-openpyxl
-requests
-python-dotenv
