@@ -42,3 +42,35 @@ En este archivo registraremos todos los errores, bugs y comportamientos inespera
 - **Solución/Estado**: Resuelto. Se actualizó la lógica para limpiar cualquier texto antes de los dos puntos (`:`).
 
 ---
+
+- **Fecha**: 2026-03-14 00:00:21
+- **Descripción**: ⚠️ DUPLICADO EN EXCHANGE: Ya existe posición para DOODUSDT.P en Bitget. Abortando.
+---
+
+- **Fecha**: 2026-03-14 00:00:21
+- **Descripción**: ⚠️ Intento 1 fallido completando OPEN para ATOMUSDT.P: bitget {"code":"40762","msg":"The order amount exceeds the balance","requestTime":1773457222045,"data":null}. Reintentando...
+---
+
+- **Fecha**: 2026-03-14 00:00:24
+- **Descripción**: ⚠️ Intento 2 fallido completando OPEN para ATOMUSDT.P: bitget {"code":"40762","msg":"The order amount exceeds the balance","requestTime":1773457224245,"data":null}. Reintentando...
+---
+
+- **Fecha**: 2026-03-14 00:00:26
+- **Descripción**: ❌ Error final abriendo posición MARKET en ATOMUSDT.P tras 3 intentos: bitget {"code":"40762","msg":"The order amount exceeds the balance","requestTime":1773457226444,"data":null}
+61: 
+62: ### 2026-03-14 21:30
+63: - **Símbolo**: Todos (especialmente ZKC, AZTEC, SAFE, IN, PHB)
+64: - **Descripción del Fallo**: Inconsistencia crítica entre el Excel/DB y Bitget. Cryptos cerradas seguían como abiertas en el Excel y algunas abiertas (ZKC) no aparecían.
+65: - **Posible Causa**: 
+66:     1. Error en la normalización de símbolos: El formato de CCXT `BASE/USDT:USDT` se normalizaba incorrectamente como `USDT`, causando colisión de datos y fallos en la detección.
+67:     2. Sincronización Incompleta: La función original de arranque solo sumaba nuevas posiciones pero no cerraba las que ya no existían en el exchange.
+68: - **Solución/Estado**: Resuelto. Se corrigió `normalizar_symbol` para soportar formatos de CCXT. Se implementó una sincronización robusta que reconcilia la base de datos marcando huérfanos como `SYNC_MISSING` y garantiza que `trades_abiertos` encaje al 100% con Bitget al iniciar.
+---
+
+- **Fecha**: 2026-03-14 23:54:45
+- **Descripción**: ⚠️ SYNC: No se pudo forzar apalancamiento en RDNTUSDT: bitget {"code":"40797","msg":"Exceeded the maximum settable leverage","requestTime":1773543285676,"data":null}
+---
+
+- **Fecha**: 2026-03-14 23:54:50
+- **Descripción**: ⚠️ SYNC: No se pudo forzar apalancamiento en 4USDT: bitget {"code":"40797","msg":"Exceeded the maximum settable leverage","requestTime":1773543290085,"data":null}
+---

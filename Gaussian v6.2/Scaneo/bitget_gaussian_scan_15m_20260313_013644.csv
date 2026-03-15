@@ -1,0 +1,4 @@
+symbol,baseCoin,granularity,profile,lookback_days,bars,trades,wins,losses,win_rate_pct,profit_factor,gross_profit_pct,gross_loss_pct,avg_trade_pct,avg_win_pct,avg_loss_pct,expectancy_pct,max_drawdown_pct,net_return_pct,quality_score,last_close,trend_state,last_signal,last_bar_utc
+1000000MOGUSDT,1000000MOG,15m,Base TV,5,381,0,0,0,0.0,inf,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.1643,LONG,NONE,2026-03-13T01:30:00+00:00
+0GUSDT,0G,15m,Base TV,5,381,0,0,0,0.0,inf,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.5863,LONG,NONE,2026-03-13T01:30:00+00:00
+1000BONKUSDT,1000BONK,15m,Base TV,5,381,0,0,0,0.0,inf,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.006246,LONG,NONE,2026-03-13T01:30:00+00:00
